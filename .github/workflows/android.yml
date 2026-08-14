@@ -19,7 +19,13 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - uses: android-actions/setup-android@v3
+      - name: Ortamı göster
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          ls "$ANDROID_HOME/platforms" || true
+          java -version
+          node -v
 
       - name: Bağımlılıkları kur
         run: npm install
@@ -39,7 +45,7 @@ jobs:
       - name: APK derle
         run: |
           chmod +x android/gradlew
-          cd android && ./gradlew assembleDebug --no-daemon
+          cd android && ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: APK'yı yükle
         uses: actions/upload-artifact@v4
