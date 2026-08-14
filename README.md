@@ -64,8 +64,15 @@ masaüstündeki gibi yalnızca imleç bir tablodayken beliriyor. Cetvel yok.
 
 ## Kaydetme
 
-Belge cihazın **Belgeler** klasörüne yazılır, ardından paylaşım sayfası açılır;
-oradan UYAP'a, e-postaya veya Drive'a gönderebilirsiniz.
+Android 11 ile gelen kapsamlı depolama, uygulamaların ortak klasörlere doğrudan
+yazmasını engelliyor (`EACCES`). Bu yüzden kaydetme, sistemin Storage Access
+Framework'ü üzerinden yapılır — `DosyaPlugin`:
+
+- **Kaydet:** belge bir `.udf` dosyasına dokunarak açıldıysa aynı dosyanın
+  üzerine yazmayı dener. Dosya yöneticisi yalnızca okuma izni verdiyse
+  otomatik olarak aşağıdaki yola düşer.
+- **Farklı kaydet:** sistemin kaydetme penceresi açılır, klasörü siz seçersiniz.
+  Depolama izni istenmez.
 
 ## Yazdırma
 
