@@ -1,19 +1,27 @@
-/* Capacitor'ün ürettiği AndroidManifest.xml'e .udf dosya ilişkilendirmesini ekler.
-   Android klasörü derleme sırasında sıfırdan üretildiği için bu yama her seferinde
-   yeniden uygulanır. Tekrar çalıştırılırsa hiçbir şey bozmaz. */
-import { readFileSync, writeFileSync } from "node:fs";
+/* Capacitor'ün ürettiği Android projesini tamamlar:
+     1) .udf dosya ilişkilendirmesi (manifest)
+     2) YazdirPlugin — WebView window.print() desteklemediği için PrintManager
+     3) DosyaPlugin  — Android 11+ ortak klasörlere yazmaya izin vermiyor (EACCES),
+                       bu yüzden kaydetme Storage Access Framework üzerinden
+   android/ klasörü her derlemede sıfırdan üretildiği için bu betik her seferinde
+   çalışır ve tekrar çalıştırıldığında hiçbir şeyi bozmaz. */
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 
-const PATH = "android/app/src/main/AndroidManifest.xml";
-let xml = readFileSync(PATH, "utf8");
+const appId = JSON.parse(readFileSync("capacitor.config.json", "utf8")).appId;
+const javaDir = "android/app/src/main/java/" + appId.replace(/\./g, "/");
+const MANIFEST = "android/app/src/main/AndroidManifest.xml";
 
-const alreadyPatched = xml.includes("UDF_FILE_ASSOCIATION");
-if (alreadyPatched) console.log("Manifest zaten yamalı, atlanıyor.");
+/* ---------------- 1) Manifest ---------------- */
+let xml = readFileSync(MANIFEST, "utf8");
 
-// UDF'nin kayıtlı bir MIME türü yok; dosya yöneticileri onu octet-stream ya da
-// bilinmeyen olarak verir. Bu yüzden hem MIME hem uzantı deseniyle yakalıyoruz.
-// Android'in pathPattern'i nokta içeren yollarda tökezlediği için kaçışlı
-// varyantlar da gerekli.
-const FILTERS = `
+if (xml.includes("UDF_FILE_ASSOCIATION")) {
+  console.log("Manifest zaten yamalı.");
+} else {
+  // UDF'nin kayıtlı MIME türü yok; dosya yöneticileri onu octet-stream ya da
+  // bilinmeyen olarak verir. Hem MIME hem uzantı deseniyle yakalıyoruz.
+  // Android'in pathPattern'i nokta içeren yollarda tökezlediği için kaçışlı
+  // varyantlar da gerekli.
+  const FILTERS = `
             <!-- UDF_FILE_ASSOCIATION -->
             <intent-filter android:priority="100">
                 <action android:name="android.intent.action.VIEW" />
@@ -29,7 +37,6 @@ const FILTERS = `
                 <data android:pathPattern=".*\\\\..*\\\\..*\\\\..*\\\\.udf" />
             </intent-filter>
 
-            <!-- "Paylaş" ile gönderilen belgeler -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -37,40 +44,22 @@ const FILTERS = `
                 <data android:mimeType="application/zip" />
             </intent-filter>
 `;
-
-const LAUNCHER = `                <category android:name="android.intent.category.LAUNCHER" />
+  const LAUNCHER = `                <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 `;
-if (!alreadyPatched && !xml.includes(LAUNCHER)) {
-  console.error("HATA: manifest'te LAUNCHER intent-filter bulunamadı.");
-  process.exit(1);
-}
-if (!alreadyPatched) xml = xml.replace(LAUNCHER, LAUNCHER + FILTERS);
-
-const INTERNET = '<uses-permission android:name="android.permission.INTERNET" />';
-xml = xml.replace(
-  INTERNET,
-  INTERNET +
-    '\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />' +
-    '\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />'
-);
-
-if (!alreadyPatched) {
-  writeFileSync(PATH, xml);
+  if (!xml.includes(LAUNCHER)) {
+    console.error("HATA: manifest'te LAUNCHER intent-filter bulunamadı.");
+    process.exit(1);
+  }
+  xml = xml.replace(LAUNCHER, LAUNCHER + FILTERS);
+  writeFileSync(MANIFEST, xml);
   console.log("Manifest yamalandı: .udf dosya ilişkilendirmesi eklendi.");
 }
-/* ---- Yazdırma / PDF eklentisi -------------------------------------------
-   Android WebView'da window.print() hiçbir şey yapmaz. Gerçek çıktı için
-   sistemin PrintManager'ını kullanmak gerekiyor; oradaki "PDF olarak kaydet"
-   seçeneği dosyayı cihaza yazar. Eklentiyi burada üretip MainActivity'ye
-   kaydediyoruz, çünkü android/ klasörü her derlemede sıfırdan oluşuyor. */
-import { mkdirSync, existsSync } from "node:fs";
 
-const appId = JSON.parse(readFileSync("capacitor.config.json", "utf8")).appId;
-const javaDir = "android/app/src/main/java/" + appId.replace(/\./g, "/");
+/* ---------------- 2) Java eklentileri ---------------- */
 mkdirSync(javaDir, { recursive: true });
 
-const PLUGIN = `package ${appId};
+writeFileSync(javaDir + "/YazdirPlugin.java", `package ${appId};
 
 import android.content.Context;
 import android.print.PrintAttributes;
@@ -82,6 +71,8 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
+/* WebView window.print() uygulamıyor; gerçek çıktı sistemin PrintManager'ından
+   alınır. Açılan ekrandaki "PDF olarak kaydet" dosyayı cihaza yazar. */
 @CapacitorPlugin(name = "Yazdir")
 public class YazdirPlugin extends Plugin {
 
@@ -109,13 +100,83 @@ public class YazdirPlugin extends Plugin {
         });
     }
 }
-`;
-writeFileSync(javaDir + "/YazdirPlugin.java", PLUGIN);
+`);
 
-const MAIN = javaDir + "/MainActivity.java";
-let main = readFileSync(MAIN, "utf8");
-if (!main.includes("YazdirPlugin")) {
-  main = `package ${appId};
+writeFileSync(javaDir + "/DosyaPlugin.java", `package ${appId};
+
+import android.app.Activity;
+import android.content.Intent;
+import android.net.Uri;
+import android.util.Base64;
+
+import androidx.activity.result.ActivityResult;
+
+import com.getcapacitor.JSObject;
+import com.getcapacitor.Plugin;
+import com.getcapacitor.PluginCall;
+import com.getcapacitor.PluginMethod;
+import com.getcapacitor.annotation.ActivityCallback;
+import com.getcapacitor.annotation.CapacitorPlugin;
+
+import java.io.OutputStream;
+
+/* Android 11+ kapsamlı depolama nedeniyle /storage/emulated/0/Documents gibi
+   ortak klasörlere doğrudan yazmak EACCES veriyor. Kaydetme bu yüzden Storage
+   Access Framework üzerinden yapılıyor: klasörü kullanıcı seçiyor, ayrıca
+   depolama izni istemeye gerek kalmıyor. */
+@CapacitorPlugin(name = "Dosya")
+public class DosyaPlugin extends Plugin {
+
+    /* Daha önce açılmış / seçilmiş bir belgenin üzerine yazar. */
+    @PluginMethod
+    public void yazUri(PluginCall call) {
+        try {
+            yaz(Uri.parse(call.getString("uri")), call.getString("veri"));
+            call.resolve();
+        } catch (Exception e) {
+            call.reject(e.getMessage());
+        }
+    }
+
+    /* Sistemin "Farklı Kaydet" penceresini açar. */
+    @PluginMethod
+    public void farkliKaydet(PluginCall call) {
+        Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE);
+        i.setType("application/octet-stream");
+        i.putExtra(Intent.EXTRA_TITLE, call.getString("ad", "belge.udf"));
+        startActivityForResult(call, i, "kaydetSonuc");
+    }
+
+    @ActivityCallback
+    private void kaydetSonuc(PluginCall call, ActivityResult result) {
+        if (call == null) return;
+        if (result.getResultCode() != Activity.RESULT_OK || result.getData() == null) {
+            call.reject("iptal");
+            return;
+        }
+        try {
+            Uri uri = result.getData().getData();
+            yaz(uri, call.getString("veri"));
+            JSObject r = new JSObject();
+            r.put("uri", uri.toString());
+            call.resolve(r);
+        } catch (Exception e) {
+            call.reject(e.getMessage());
+        }
+    }
+
+    private void yaz(Uri uri, String base64) throws Exception {
+        OutputStream os = getContext().getContentResolver().openOutputStream(uri, "wt");
+        if (os == null) throw new Exception("Dosya yazmaya açılamadı.");
+        os.write(Base64.decode(base64, Base64.DEFAULT));
+        os.flush();
+        os.close();
+    }
+}
+`);
+
+writeFileSync(javaDir + "/MainActivity.java", `package ${appId};
 
 import android.os.Bundle;
 import com.getcapacitor.BridgeActivity;
@@ -124,11 +185,10 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(YazdirPlugin.class);
+        registerPlugin(DosyaPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }
-`;
-  writeFileSync(MAIN, main);
-}
-console.log("Yazdırma eklentisi eklendi ve MainActivity'ye kaydedildi.");
+`);
 
+console.log("Java eklentileri yazıldı: YazdirPlugin, DosyaPlugin.");
