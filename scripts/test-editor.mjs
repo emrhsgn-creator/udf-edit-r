@@ -65,5 +65,35 @@ ok(/color:#FF0000/i.test(w.editorToUdfHtml()), "font etiketi rengi okunuyor");
 sheet.innerHTML = '<p>A<span data-udf="tab">\u00A0\u00A0\u00A0\u00A0</span>B</p>';
 ok(/<tab\/>/.test(w.editorToUdfHtml()), "sekme <tab/> olarak yazılıyor");
 
+
+// --- 8. Paragraf penceresi: ayarlar gerçekten uygulanıyor mu? ----------
+// Odak pencerenin kutularına geçtiğinde seçim kayboluyordu; hedef paragraflar
+// artık AÇILIŞTA yakalanıyor. Test tam olarak o durumu kuruyor.
+sheet.innerHTML = '<p id="hedef">Bir paragraf</p>';
+const hedef = d.getElementById("hedef");
+const rng = d.createRange(); rng.selectNodeContents(hedef);
+const gs = w.getSelection(); gs.removeAllRanges(); gs.addRange(rng);
+
+d.getElementById("bParaFmt").click();
+ok(d.getElementById("dlg").classList.contains("on"), "Paragraf penceresi açılıyor");
+
+// kullanıcı kutulara dokunuyor -> seçim editörden çıkıyor
+d.getElementById("dLh").value = "2";
+d.getElementById("dBf").value = "0,5";
+d.getElementById("dMl").value = "1";
+d.getElementById("dHa").value = "1";
+d.querySelector('[data-al="center"]').click();
+gs.removeAllRanges();                       // seçim kayboldu (asıl hata buydu)
+
+d.getElementById("dOk").click();
+
+ok(hedef.style.lineHeight === "2", "satır aralığı uygulandı");
+ok(Math.abs(parseFloat(hedef.style.marginTop) - 14.17) < 0.2, "önce 0,5cm = 14,17pt");
+ok(hedef.style.textAlign === "center", "hizalama uygulandı");
+// asılı girinti: gövde sağa (1+1=2cm), ilk satır sola taşar (-1cm)
+ok(Math.abs(parseFloat(hedef.style.marginLeft) - 56.69) < 0.3, "asılı girinti sol kenarı");
+ok(parseFloat(hedef.style.textIndent) < 0, "asılı girinti ilk satırı sola taşıyor");
+ok(!d.getElementById("dlg").classList.contains("on"), "Tamam pencereyi kapatıyor");
+
 if (fail) { console.error(`\n${fail} sınama başarısız.`); process.exit(1); }
 console.log("\nTüm sınamalar geçti.");
