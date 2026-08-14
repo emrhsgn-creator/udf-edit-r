@@ -6,6 +6,9 @@ Dönüşüm tamamen cihazda çalışır — belge hiçbir sunucuya gönderilmez.
 Metin biçimlendirme, tablolar, listeler, görseller, sayfa düzeni, bul-değiştir,
 PDF çıktısı. UYAP'tan indirdiğiniz `.udf` dosyasına dokunduğunuzda uygulama açılır.
 
+Arayüz UYAP Doküman Editörü v5.4.17'ye göre kurgulandı: aynı şerit sekmeleri ve
+grupları, aynı renkler, Paragraf penceresi cm birimiyle ve canlı önizlemeli.
+
 ## APK nasıl alınır (bilgisayara kurulum gerekmez)
 
 Android Studio kurmanıza gerek yok; derlemeyi GitHub yapar.
@@ -23,7 +26,9 @@ Android Studio kurmanıza gerek yok; derlemeyi GitHub yapar.
 
 ## Kendi bilgisayarınızda derlemek
 
-JDK 21 ve Android SDK gerekir:
+**Node.js 22 veya üstü** gerekir — Capacitor 8 bunu şart koşuyor ve daha eski
+bir sürümde `cap add android` adımı hata verir. Kontrol: `node -v`.
+Ayrıca JDK 21 ve Android SDK gerekir (Android Studio ikisini de getirir):
 
 ```bash
 npm install
@@ -62,11 +67,26 @@ masaüstündeki gibi yalnızca imleç bir tablodayken beliriyor. Cetvel yok.
 Belge cihazın **Belgeler** klasörüne yazılır, ardından paylaşım sayfası açılır;
 oradan UYAP'a, e-postaya veya Drive'a gönderebilirsiniz.
 
+## Yazdırma
+
+Android WebView `window.print()` desteklemediği için PDF çıktısı, `scripts/patch-android.mjs`
+tarafından üretilen küçük bir Java eklentisi (`YazdirPlugin`) üzerinden sistemin
+`PrintManager` servisine veriliyor. Açılan yazdırma ekranındaki "PDF olarak kaydet"
+seçeneği dosyayı cihaza yazar.
+
+## Sınamalar
+
+`npm test` iki takım çalıştırır: `test-codec.mjs` codec'i tarayıcı ortamını taklit
+ederek (Buffer global değilken) sınar, `test-editor.mjs` ise editörü jsdom içinde
+ayağa kaldırıp "hiçbir düğmeye basmadan doğrudan yaz ve kaydet" akışını dener.
+Geçmişteki hataların çoğu tam olarak bu iki noktadaydı.
+
 ## Bilinen sınırlar
 
 - **E-imza:** İmzalı bir belgeyi düzenleyip kaydetmek imzayı geçersiz kılar.
   Bu, formatın doğası gereğidir; imzalı asıl UYAP'taki kayıttır.
-- **İç içe listeler:** Codec bunları tek düzeye indiriyor.
+- **İç içe listeler:** Codec bunları tek düzeye indiriyor; çok düzeyli liste
+  düğmesi kullanıldığında uygulama uyarı gösterir.
 - Uygulama gerçek cihazda denenmedi. Dosya açma ve kaydetme yolları Android
   sürümüne ve dosya yöneticisine göre ayar isteyebilir.
 
