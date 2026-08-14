@@ -69,6 +69,28 @@
     });
   }
 
+
+  /* ---- PDF / yazdırma ----
+     WebView window.print()'i uygulamıyor. Sistemin PrintManager'ı çağrılınca
+     çıkan sayfada "PDF olarak kaydet" seçeneği dosyayı cihaza yazıyor. */
+  window.exportPdf = function () {
+    var ad = String(doc.name || "belge").replace(/\.udf$/i, "");
+    var eski = document.body.dataset.view;
+    document.body.dataset.view = "page";
+    setTimeout(function () {
+      if (P.Yazdir && P.Yazdir.yazdir) {
+        P.Yazdir.yazdir({ ad: ad }).catch(function (e) {
+          showNotice('<span class="mk">!</span><span><b>Yazdırma açılamadı.</b><br>' +
+            String(e && e.message || e) + '</span>');
+        }).then(function(){ document.body.dataset.view = eski; });
+      } else {
+        document.body.dataset.view = eski;
+        showNotice('<span class="mk">!</span><span>Yazdırma bileşeni bulunamadı. ' +
+          'Uygulamayı yeni sürümle güncellemeniz gerekiyor.</span>');
+      }
+    }, 150);
+  };
+
   /* ---- Cihaza kaydet ---- */
   window.saveUdf = async function (asName) {
     var name = String(asName || doc.name).replace(/\.udf$/i, "").replace(/[\/\\:*?"<>|]/g, "_") + ".udf";
