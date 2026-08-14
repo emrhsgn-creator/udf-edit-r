@@ -1,13 +1,13 @@
 /* Android köprüsü.
    Tarayıcıda hiçbir şey yapmaz — yalnızca uygulama içinde devreye girer.
-   İki işi var: UYAP'tan gelen .udf dosyasını açmak, ve düzenlenen belgeyi
-   tarayıcı indirmesi yerine cihaza gerçekten kaydedip paylaşım sayfasına vermek. */
+   Üç işi var: gelen .udf dosyasını açmak, belgeyi cihaza kaydetmek,
+   PDF çıktısını sistemin yazdırma servisine vermek. */
 (function () {
   "use strict";
   if (!window.Capacitor || !Capacitor.isNativePlatform || !Capacitor.isNativePlatform()) return;
 
   var P = Capacitor.Plugins,
-      Filesystem = P.Filesystem, Share = P.Share, App = P.App;
+      Filesystem = P.Filesystem, App = P.App, Dosya = P.Dosya, Yazdir = P.Yazdir;
 
   function b64ToBytes(b64) {
     var bin = atob(b64), a = new Uint8Array(bin.length);
@@ -31,23 +31,25 @@
     } catch (e) {}
     return "belge.udf";
   }
+  function bildir(html, ms) {
+    showNotice(html);
+    if (ms) setTimeout(hideNotice, ms);
+  }
 
   /* ---- Gelen dosyayı aç ---- */
   var lastUri = null;
   async function openUri(uri) {
-    if (!uri || uri === lastUri) return;
-    if (/^https?:/i.test(uri)) return;          // derin bağlantı, dosya değil
+    if (!uri || uri === lastUri || /^https?:/i.test(uri)) return;
     lastUri = uri;
     try {
       var r = await Filesystem.readFile({ path: uri });
-      var file = new File([b64ToBytes(r.data)], nameFromUri(uri), {
-        type: "application/octet-stream"
-      });
-      await openFile(file);                      // editörün kendi açma akışı
+      await openFile(new File([b64ToBytes(r.data)], nameFromUri(uri),
+        { type: "application/octet-stream" }));
+      doc.kaynakUri = uri;          // Kaydet aynı dosyanın üzerine yazmayı denesin
     } catch (e) {
-      showNotice('<span class="mk">!</span><span><b>Dosya okunamadı.</b><br>' +
-        'Dosya yöneticisi izin vermemiş olabilir. Dosyayı uygulamaya "Paylaş" ile ' +
-        'göndermeyi ya da uygulama içinden <b>Aç</b> ile seçmeyi deneyin.</span>');
+      bildir('<span class="mk">!</span><span><b>Dosya okunamadı.</b><br>' +
+        'Dosyayı uygulamaya "Paylaş" ile göndermeyi ya da uygulama içinden ' +
+        '<b>Aç</b> ile seçmeyi deneyin.</span>');
     }
   }
 
@@ -55,67 +57,87 @@
     App.getLaunchUrl().then(function (r) { if (r && r.url) openUri(r.url); }).catch(function () {});
     App.addListener("appUrlOpen", function (d) { if (d && d.url) openUri(d.url); });
 
-    // Geri tuşu: önce açık paneli kapat, sonra belgeden çık, sonra uygulamayı arkaya al
     App.addListener("backButton", function () {
-      var panel = document.getElementById("panel");
-      if (panel && panel.classList.contains("on")) { closePanel(); return; }
+      var dlg = document.getElementById("dlg"), pnl = document.getElementById("panel");
+      if (dlg && dlg.classList.contains("on")) { closeDialog(); return; }
+      if (pnl && pnl.classList.contains("on")) { closePanel(); return; }
       if (doc.dirty) {
-        showNotice('<span class="mk">!</span><span>Kaydedilmemiş değişiklik var. ' +
-          'Çıkmadan önce <b>Kaydet</b>e dokunun.</span>');
-        doc.dirty = false;                        // ikinci geri tuşu çıkarsın
+        bildir('<span class="mk">!</span><span>Kaydedilmemiş değişiklik var. ' +
+          'Çıkmadan önce <b>Kaydet</b>e dokunun.</span>', 4000);
+        doc.dirty = false;                     // ikinci geri tuşu çıkarsın
         return;
       }
       App.exitApp();
     });
   }
 
+  /* ---- Cihaza kaydet ----
+     Android 11+ ortak klasörlere doğrudan yazmaya izin vermiyor (EACCES).
+     Bu yüzden ya belgenin geldiği adrese yazıyoruz, ya da sistemin
+     "Farklı Kaydet" penceresini açıp klasörü kullanıcıya seçtiriyoruz. */
+  async function kaydet(ad, hepYeniYer) {
+    var isim = String(ad || doc.name || "belge")
+      .replace(/\.udf$/i, "").replace(/[\/\\:*?"<>|]/g, "_") + ".udf";
+    var veri = await blobToB64(await window.UDF.toUdf(editorToUdfHtml()));
+
+    if (!Dosya) {
+      bildir('<span class="mk">!</span><span>Kaydetme bileşeni bulunamadı. ' +
+        'Uygulamayı yeni sürümle güncelleyin.</span>');
+      return;
+    }
+
+    // 1) Aynı dosyanın üzerine yaz
+    if (!hepYeniYer && doc.kaynakUri) {
+      try {
+        await Dosya.yazUri({ uri: doc.kaynakUri, veri: veri });
+        doc.name = isim;
+        document.getElementById("fname").textContent = "Doküman Editörü — " + isim;
+        setDirty(false); saveRecent();
+        bildir('<span class="mk">✓</span><span><b>' + isim + '</b> kaydedildi.</span>', 3500);
+        return;
+      } catch (e) {
+        // Çoğu dosya yöneticisi yalnızca okuma izni veriyor; yeni yer soralım.
+      }
+    }
+
+    // 2) Klasörü kullanıcı seçsin
+    try {
+      var r = await Dosya.farkliKaydet({ ad: isim, veri: veri });
+      doc.name = isim;
+      if (r && r.uri) doc.kaynakUri = r.uri;
+      document.getElementById("fname").textContent = "Doküman Editörü — " + isim;
+      setDirty(false); saveRecent();
+      bildir('<span class="mk">✓</span><span><b>' + isim + '</b> kaydedildi.</span>', 3500);
+    } catch (e) {
+      if (String(e && e.message) === "iptal") return;   // kullanıcı vazgeçti
+      bildir('<span class="mk">!</span><span><b>Kaydedilemedi.</b><br>' +
+        String(e && e.message || e) + '</span>');
+    }
+  }
+
+  window.saveUdf = function (asName) { return kaydet(asName, false); };
+  window.saveUdfAs = function (asName) { return kaydet(asName, true); };
 
   /* ---- PDF / yazdırma ----
-     WebView window.print()'i uygulamıyor. Sistemin PrintManager'ı çağrılınca
-     çıkan sayfada "PDF olarak kaydet" seçeneği dosyayı cihaza yazıyor. */
+     WebView window.print()'i uygulamıyor; sistemin PrintManager'ı çağrılınca
+     çıkan ekrandaki "PDF olarak kaydet" dosyayı cihaza yazıyor. */
   window.exportPdf = function () {
     var ad = String(doc.name || "belge").replace(/\.udf$/i, "");
     var eski = document.body.dataset.view;
     document.body.dataset.view = "page";
     setTimeout(function () {
-      if (P.Yazdir && P.Yazdir.yazdir) {
-        P.Yazdir.yazdir({ ad: ad }).catch(function (e) {
-          showNotice('<span class="mk">!</span><span><b>Yazdırma açılamadı.</b><br>' +
-            String(e && e.message || e) + '</span>');
-        }).then(function(){ document.body.dataset.view = eski; });
-      } else {
+      if (!Yazdir) {
         document.body.dataset.view = eski;
-        showNotice('<span class="mk">!</span><span>Yazdırma bileşeni bulunamadı. ' +
-          'Uygulamayı yeni sürümle güncellemeniz gerekiyor.</span>');
+        bildir('<span class="mk">!</span><span>Yazdırma bileşeni bulunamadı. ' +
+          'Uygulamayı yeni sürümle güncelleyin.</span>');
+        return;
       }
+      Yazdir.yazdir({ ad: ad })
+        .catch(function (e) {
+          bildir('<span class="mk">!</span><span><b>Yazdırma açılamadı.</b><br>' +
+            String(e && e.message || e) + '</span>');
+        })
+        .then(function () { document.body.dataset.view = eski; });
     }, 150);
-  };
-
-  /* ---- Cihaza kaydet ---- */
-  window.saveUdf = async function (asName) {
-    var name = String(asName || doc.name).replace(/\.udf$/i, "").replace(/[\/\\:*?"<>|]/g, "_") + ".udf";
-    try {
-      var blob = await window.UDF.toUdf(editorToUdfHtml());
-      var w = await Filesystem.writeFile({
-        path: name,
-        data: await blobToB64(blob),
-        directory: "DOCUMENTS",
-        recursive: true
-      });
-      doc.name = name;
-      document.getElementById("fname").textContent = name;
-      setDirty(false);
-      saveRecent();
-      showNotice('<span class="mk">✓</span><span><b>' + name + '</b> Belgeler klasörüne kaydedildi.</span>');
-      setTimeout(hideNotice, 4000);
-      if (Share) {
-        try {
-          await Share.share({ title: name, url: w.uri, dialogTitle: "UDF dosyasını gönder" });
-        } catch (e) { /* paylaşımdan vazgeçildi — dosya yine de kayıtlı */ }
-      }
-    } catch (e) {
-      showNotice('<span class="mk">!</span><span><b>Kaydedilemedi.</b><br>' +
-        String(e && e.message || e) + '</span>');
-    }
   };
 })();
