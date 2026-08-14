@@ -1,0 +1,22 @@
+{
+  "name": "udf-editor",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "UYAP Doküman Formatı (.udf) için Android düzenleyici",
+  "scripts": {
+    "android:prepare": "npm run build && cap add android || true && node scripts/patch-android.mjs && cap sync android",
+    "android:build": "npm run android:prepare && cd android && ./gradlew assembleDebug",
+    "build": "node src/build.mjs"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.0.0",
+    "@capacitor/app": "^8.0.0",
+    "@capacitor/core": "^8.0.0",
+    "@capacitor/filesystem": "^8.0.0",
+    "@capacitor/share": "^8.0.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.0.0"
+  }
+}

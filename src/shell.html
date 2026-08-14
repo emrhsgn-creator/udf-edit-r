@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Doküman Editörü</title>
+<style>
+/* Renkler doğrudan UYAP Doküman Editörü v5.4.17 ekran görüntülerinden örneklendi. */
+:root{
+  --teal:#2C99AE;          /* çalışma alanı */
+  --chrome:#EEEEEE;        /* şerit, sekme seridi, durum çubuğu */
+  --grp-top:#FAFAFA;       /* grup paneli degrade üst */
+  --grp-bot:#DDE6F0;       /* grup paneli degrade alt */
+  --grp-line:#B8CFE5;      /* grup paneli çerçevesi */
+  --txt:#333333;
+  --lbl:#6B7480;           /* grup etiketi */
+  --red:#FF1B0F;           /* vurgu */
+  --blue:#6382BF;
+  --page-edge:#B5B5B5;
+  --hover:#D6E5F5;
+  --sel:#BCD8F5;
+  --ui:"Segoe UI",Tahoma,"Noto Sans",system-ui,sans-serif;
+  --zoom:1.25;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0}
+body{background:var(--teal);color:var(--txt);font:13px var(--ui);display:flex;flex-direction:column;overscroll-behavior:none}
+
+/* ---- başlık çubuğu ---- */
+.title{flex:0 0 auto;display:flex;align-items:center;gap:7px;background:#fff;border-bottom:1px solid #DCDCDC;
+  padding:calc(env(safe-area-inset-top) + 5px) 9px 5px;font-size:11.5px;color:#444}
+.title .logo{width:17px;height:17px;border-radius:50%;background:var(--red);flex:0 0 auto;
+  display:flex;align-items:center;justify-content:center;color:#fff;font:700 8px var(--ui)}
+.title .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ---- sekmeler ---- */
+.tabs{flex:0 0 auto;display:flex;background:var(--chrome);overflow-x:auto;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tabs button{flex:0 0 auto;background:none;border:0;border-bottom:1px solid var(--grp-line);
+  color:var(--txt);font:13px var(--ui);padding:8px 14px 7px;cursor:pointer;white-space:nowrap}
+.tabs button.on{background:#fff;border:1px solid var(--grp-line);border-bottom-color:#fff;
+  border-radius:3px 3px 0 0;font-weight:600}
+.tabs button.ctx{color:#8A3B36}
+
+/* ---- şerit ---- */
+.ribbon{flex:0 0 auto;background:var(--chrome);border-bottom:1px solid #C9C9C9;padding:5px 6px 2px}
+.pane{display:none;gap:5px;overflow-x:auto;scrollbar-width:none;padding-bottom:3px}
+.pane::-webkit-scrollbar{display:none}
+.pane.on{display:flex}
+.grp{flex:0 0 auto;display:flex;flex-direction:column;background:linear-gradient(#FAFAFA,#DDE6F0);
+  border:1px solid var(--grp-line);border-radius:3px;padding:4px 5px 1px}
+.grp .row{display:flex;align-items:center;gap:3px;flex:1}
+.grp .lbl{text-align:center;font-size:9.5px;color:var(--lbl);padding-top:2px;letter-spacing:.02em}
+.b{display:flex;align-items:center;justify-content:center;gap:4px;min-width:30px;height:30px;
+  background:none;border:1px solid transparent;border-radius:3px;color:var(--txt);
+  font:12.5px var(--ui);cursor:pointer;padding:0 6px;white-space:nowrap}
+.b:active,.b:hover{background:var(--hover);border-color:var(--grp-line)}
+.b.on{background:var(--sel);border-color:#8FB6DE}
+.b:disabled{opacity:.4;background:none;border-color:transparent}
+.b svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.b.big{flex-direction:column;gap:1px;height:56px;min-width:46px;font-size:11px;line-height:1.1}
+.b.big svg{width:22px;height:22px}
+.b.ser{font-family:"Times New Roman",serif;font-size:16px}
+.b.ser .k{font-weight:700}.b.ser .t{font-style:italic}.b.ser .a{text-decoration:underline}
+.b .bar{display:block;width:14px;height:3px;border-radius:1px;margin-top:-2px}
+.vsep{width:1px;background:var(--grp-line);align-self:stretch;margin:2px 3px}
+select.f{height:26px;border:1px solid #ABADB3;border-radius:2px;background:#fff;color:var(--txt);
+  font:12px var(--ui);padding:0 3px;max-width:118px}
+select.f.sz{max-width:52px}
+
+/* ---- kanvas ---- */
+main{flex:1 1 auto;overflow:auto;-webkit-overflow-scrolling:touch;background:var(--teal);padding:12px 0 20px}
+.wrap{display:flex;justify-content:center}
+.sheet{background:#fff;color:#000;zoom:var(--zoom);border:1px solid var(--page-edge);outline:none}
+body[data-view=write] .sheet{width:calc(100% - 16px);max-width:660px;padding:16px 15px}
+body[data-view=page] .sheet{width:var(--pw);padding:var(--mt) var(--mr) var(--mb) var(--ml)}
+.sheet p{margin:0;font:12pt/1.42 "Times New Roman",Times,serif;min-height:1.42em;word-wrap:break-word}
+.sheet li{font:12pt/1.42 "Times New Roman",Times,serif}
+.sheet ol,.sheet ul{margin:0;padding-left:28pt}
+.sheet table{border-collapse:collapse;margin:4pt 0;width:100%}
+.sheet td{border:.5px solid #000;padding:4px;vertical-align:top;min-width:24pt}
+.sheet td[data-nb="1"]{border:.5px dashed #D8D8D8!important}
+.sheet td.sel{outline:2px solid var(--blue);outline-offset:-2px}
+.sheet img{max-width:100%}
+.sheet [data-udf=tab]{display:inline-block;min-width:28pt;white-space:pre}
+.sheet [data-udf=pagebreak]{display:block;text-align:center;font:9pt var(--ui);color:#9AA;
+  border-top:1px dashed #BBB;border-bottom:1px dashed #BBB;margin:8pt 0;padding:2pt;user-select:none}
+
+.empty{max-width:430px;margin:9vh auto 0;text-align:center;padding:0 22px;color:#fff}
+.empty h2{font-size:18px;font-weight:600;margin:0 0 8px}
+.empty p{font-size:13px;line-height:1.55;margin:0 0 18px;color:#E4F3F6}
+.empty .row{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+.wb{background:#fff;border:1px solid var(--grp-line);border-radius:3px;color:var(--txt);
+  font:13px var(--ui);padding:9px 15px;cursor:pointer}
+.recent{margin-top:22px;text-align:left;background:rgba(255,255,255,.12);border-radius:4px;padding:4px 12px}
+.recent h3{font-size:10.5px;margin:9px 0 4px;letter-spacing:.06em;color:#DCEFF3}
+.recent button{display:flex;width:100%;gap:9px;align-items:center;background:none;border:0;
+  border-top:1px solid rgba(255,255,255,.22);color:#fff;font:12.5px var(--ui);padding:10px 2px;cursor:pointer;text-align:left}
+.recent button span{margin-left:auto;font-size:10.5px;color:#CFE8ED}
+
+/* ---- bildirim ---- */
+.notice{flex:0 0 auto;display:none;gap:8px;padding:8px 13px;font-size:12px;line-height:1.45;
+  background:#FFF4CE;border-bottom:1px solid #E3D08A;color:#5B4A12}
+.notice.show{display:flex}
+.notice .mk{color:#A8121C;font-weight:700}
+
+/* ---- durum çubuğu ---- */
+.status{flex:0 0 auto;display:flex;align-items:center;gap:11px;background:var(--chrome);
+  border-top:1px solid #C9C9C9;padding:5px 10px calc(env(safe-area-inset-bottom) + 5px);
+  font-size:11px;color:#3A3A3A;overflow-x:auto;scrollbar-width:none;white-space:nowrap}
+.status::-webkit-scrollbar{display:none}
+.status .g{margin-left:auto}
+.status input[type=range]{width:82px;accent-color:var(--blue)}
+.status .z{min-width:34px;text-align:right}
+
+/* ---- alt panel ---- */
+.scrim{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;z-index:40}
+.scrim.on{display:block}
+.panel{position:fixed;left:0;right:0;bottom:0;z-index:41;background:#F5F6F8;border-top:1px solid #C9C9C9;
+  border-radius:6px 6px 0 0;padding:14px 15px calc(env(safe-area-inset-bottom) + 15px);
+  transform:translateY(101%);transition:transform .2s ease-out;max-height:82vh;overflow:auto}
+.panel.on{transform:none}
+@media (prefers-reduced-motion:reduce){.panel{transition:none}}
+.panel h3{margin:0 0 13px;font-size:14px;font-weight:600;color:#1F3D5C}
+.fld{margin-bottom:12px}
+.fld label{display:block;font-size:11px;color:#5A6470;margin-bottom:5px}
+.fld input,.fld select{width:100%;background:#fff;border:1px solid #ABADB3;border-radius:2px;
+  color:var(--txt);font:13.5px var(--ui);padding:8px}
+.fld .two{display:flex;gap:8px}
+.pact{display:flex;gap:8px;margin-top:14px}
+.pact .wb{flex:1;text-align:center;padding:10px}
+.pact .wb.pri{background:var(--blue);border-color:#4E6BA8;color:#fff;font-weight:600}
+.colors{display:grid;grid-template-columns:repeat(8,1fr);gap:6px}
+.colors button{aspect-ratio:1;border-radius:2px;border:1px solid #B0B0B0;cursor:pointer}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chips button{background:#fff;border:1px solid #ABADB3;border-radius:2px;color:var(--txt);
+  font:13px var(--ui);padding:8px 12px;cursor:pointer}
+.chips button.on{background:var(--sel);border-color:#8FB6DE}
+.hits{font-size:11px;color:#5A6470;margin:-6px 0 10px}
+input[type=file]{display:none}
+
+@media print{
+  body{background:#fff}
+  .title,.tabs,.ribbon,.status,.notice,.scrim,.panel{display:none!important}
+  main{overflow:visible;padding:0;background:#fff}
+  .sheet{zoom:1!important;width:100%!important;border:0;padding:0!important}
+  .sheet [data-udf=pagebreak]{break-after:page;border:0;color:transparent}
+  .sheet td[data-nb="1"]{border:0!important}
+}
+</style>
+</head>
+<body data-view="write">
+
+<div class="title"><div class="logo">UDE</div><div class="nm" id="fname">Doküman Editörü — belge yok</div></div>
+
+<div class="tabs" id="tabs">
+  <button data-tab="dosya">Dosya</button>
+  <button data-tab="giris" class="on">Giriş</button>
+  <button data-tab="duzenle">Düzenle</button>
+  <button data-tab="ekle">Ekle</button>
+  <button data-tab="bicim">Biçim</button>
+  <button data-tab="araclar">Araçlar</button>
+  <button data-tab="gorunum">Görünüm</button>
+  <button data-tab="tablo" class="ctx" id="tabTablo" hidden>Tablo</button>
+</div>
+
+<div class="ribbon">
+
+  <div class="pane" data-pane="dosya">
+    <div class="grp"><div class="row">
+      <button class="b big" id="bNew"><svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>Yeni</button>
+      <button class="b big" id="bOpen"><svg viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v9a2 2 0 0 1-2 2H3z"/></svg>Aç</button>
+      <button class="b big" id="bSave"><svg viewBox="0 0 24 24"><path d="M5 3h11l3 3v15H5z"/><path d="M8 3v6h7M8 21v-6h8v6"/></svg>Kaydet</button>
+      <button class="b big" id="bSaveAs"><svg viewBox="0 0 24 24"><path d="M5 3h11l3 3v9H5z"/><path d="M8 3v5h7"/><path d="M12 21h9M17 17l4 4-4 4" transform="translate(-4,-4) scale(.9)"/></svg>Farklı</button>
+    </div><div class="lbl">Dosya</div></div>
+    <div class="grp"><div class="row">
+      <button class="b big" id="bPdf"><svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 17h6"/></svg>PDF</button>
+    </div><div class="lbl">Ver</div></div>
+  </div>
+
+  <div class="pane on" data-pane="giris">
+    <div class="grp"><div class="row">
+      <button class="b big" data-cmd="paste"><svg viewBox="0 0 24 24"><path d="M9 3h6v3H9z"/><path d="M8 5H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/></svg>Yapıştır</button>
+      <div style="display:flex;flex-direction:column;gap:2px">
+        <button class="b" data-cmd="cut"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.5 15.5M20 20 8.5 8.5"/></svg>Kes</button>
+        <button class="b" data-cmd="copy"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>Kopyala</button>
+      </div>
+    </div><div class="lbl">Pano</div></div>
+
+    <div class="grp"><div class="row">
+      <select class="f" id="selFont"></select>
+      <select class="f sz" id="selSize"></select>
+      <button class="b" data-size="1" title="Büyüt">A⁺</button>
+      <button class="b" data-size="-1" title="Küçült">A⁻</button>
+      <div class="vsep"></div>
+      <button class="b ser" data-cmd="bold"><span class="k">K</span></button>
+      <button class="b ser" data-cmd="italic"><span class="t">T</span></button>
+      <button class="b ser" data-cmd="underline"><span class="a">A</span></button>
+      <button class="b ser" data-cmd="strikeThrough"><s>A</s></button>
+      <button class="b ser" data-cmd="subscript">a<sub>s</sub></button>
+      <button class="b ser" data-cmd="superscript">a<sup>s</sup></button>
+      <div class="vsep"></div>
+      <button class="b" id="bFore" title="Yazı rengi"><span style="font:700 14px var(--ui)">A</span><span class="bar" id="swFore" style="background:#FF1B0F"></span></button>
+      <button class="b" id="bBack" title="Vurgu"><svg viewBox="0 0 24 24"><path d="m15 5 4 4L8.5 19.5 3 21l1.5-5.5z"/></svg><span class="bar" id="swBack" style="background:#FFFF00"></span></button>
+      <button class="b" id="bClear" title="Biçimi temizle"><svg viewBox="0 0 24 24"><path d="M4 7h16M9 7l1 12M15 7l-1 12"/></svg></button>
+    </div><div class="lbl">Font</div></div>
+
+    <div class="grp"><div class="row">
+      <button class="b" data-list="insertUnorderedList"><svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></svg></button>
+      <button class="b" data-list="insertOrderedList"><svg viewBox="0 0 24 24"><path d="M10 6h10M10 12h10M10 18h10M4 4h1v4M4 12h2l-2 3h2"/></svg></button>
+      <button class="b" data-indent="-18"><svg viewBox="0 0 24 24"><path d="M20 6H10M20 12H10M20 18H10M7 9l-3 3 3 3"/></svg></button>
+      <button class="b" data-indent="18"><svg viewBox="0 0 24 24"><path d="M20 6H10M20 12H10M20 18H10M4 9l3 3-3 3"/></svg></button>
+      <div class="vsep"></div>
+      <button class="b" data-align="left"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 11h10M4 16h16M4 21h10"/></svg></button>
+      <button class="b" data-align="center"><svg viewBox="0 0 24 24"><path d="M4 6h16M7 11h10M4 16h16M7 21h10"/></svg></button>
+      <button class="b" data-align="right"><svg viewBox="0 0 24 24"><path d="M4 6h16M10 11h10M4 16h16M10 21h10"/></svg></button>
+      <button class="b" data-align="justify"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 11h16M4 16h16M4 21h16"/></svg></button>
+      <div class="vsep"></div>
+      <button class="b" id="bSpacing"><svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4 8V4m0 0L2.5 5.5M4 4l1.5 1.5M4 16v4m0 0 1.5-1.5M4 20l-1.5-1.5"/></svg></button>
+    </div><div class="lbl">Paragraf</div></div>
+
+    <div class="grp"><div class="row">
+      <button class="b big" id="bFind"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Bul</button>
+    </div><div class="lbl">Arama</div></div>
+  </div>
+
+  <div class="pane" data-pane="duzenle">
+    <div class="grp"><div class="row">
+      <button class="b big" id="bUndo"><svg viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-4"/></svg>Geri al</button>
+      <button class="b big" id="bRedo"><svg viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h4"/></svg>İleri al</button>
+    </div><div class="lbl">Geri alma</div></div>
+    <div class="grp"><div class="row">
+      <button class="b big" id="bFind2"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Bul ve<br>Değiştir</button>
+      <button class="b big" id="bAll"><svg viewBox="0 0 24 24"><path d="M4 5h16M4 10h16M4 15h11"/></svg>Tümünü<br>seç</button>
+    </div><div class="lbl">Düzenleme</div></div>
+  </div>
+
+  <div class="pane" data-pane="ekle">
+    <div class="grp"><div class="row">
+      <button class="b big" id="bInsTable"><svg viewBox="0 0 24 24"><path d="M3 4h18v16H3zM3 10h18M3 15h18M9 4v16M15 4v16"/></svg>Tablo</button>
+      <button class="b big" id="bInsImage"><svg viewBox="0 0 24 24"><path d="M3 4h18v16H3z"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="m21 16-5-5-9 9"/></svg>Görsel</button>
+    </div><div class="lbl">Tablolar ve görseller</div></div>
+    <div class="grp"><div class="row">
+      <button class="b big" id="bInsBreak"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 17h16M8 12h8"/></svg>Sayfa<br>sonu</button>
+      <button class="b big" id="bInsTab"><svg viewBox="0 0 24 24"><path d="M4 12h11M11 8l4 4-4 4M19 6v12"/></svg>Sekme</button>
+      <button class="b big" id="bInsDate"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Tarih</button>
+    </div><div class="lbl">Simgeler</div></div>
+  </div>
+
+  <div class="pane" data-pane="bicim">
+    <div class="grp"><div class="row">
+      <button class="b big" id="bParaFmt"><svg viewBox="0 0 24 24"><path d="M13 4h5M4 4h5v8H4zM4 16h16M4 20h16"/></svg>Paragraf</button>
+      <button class="b big" id="bIndentFirst"><svg viewBox="0 0 24 24"><path d="M10 6h10M4 12h16M4 18h16M4 6h3"/></svg>İlk satır<br>girintisi</button>
+    </div><div class="lbl">Paragraf</div></div>
+    <div class="grp"><div class="row">
+      <button class="b big" id="bPageFmt"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="1"/><path d="M8 7h8M8 11h8M8 15h5"/></svg>Sayfa<br>düzeni</button>
+    </div><div class="lbl">Sayfa</div></div>
+  </div>
+
+  <div class="pane" data-pane="araclar">
+    <div class="grp"><div class="row">
+      <button class="b big" id="bWordInfo"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Kelime<br>bilgisi</button>
+      <button class="b big" id="bSelInfo"><svg viewBox="0 0 24 24"><path d="M4 4h7v7H4z"/><path d="M13 13h7v7h-7z"/><path d="M11 11l2 2"/></svg>Seçim<br>bilgisi</button>
+    </div><div class="lbl">Göster</div></div>
+  </div>
+
+  <div class="pane" data-pane="gorunum">
+    <div class="grp"><div class="row">
+      <button class="b big" id="bView"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="1"/></svg>A4<br>görünüm</button>
+      <button class="b big" id="bZoomOut"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5M8 11h6"/></svg>Uzaklaştır</button>
+      <button class="b big" id="bZoomIn"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5M8 11h6M11 8v6"/></svg>Yakınlaştır</button>
+    </div><div class="lbl">Görünüm</div></div>
+  </div>
+
+  <div class="pane" data-pane="tablo">
+    <div class="grp"><div class="row">
+      <button class="b" data-tbl="rowAfter">+ Satır</button>
+      <button class="b" data-tbl="rowDel">− Satır</button>
+      <button class="b" data-tbl="colAfter">+ Sütun</button>
+      <button class="b" data-tbl="colDel">− Sütun</button>
+    </div><div class="lbl">Satır ve sütun</div></div>
+    <div class="grp"><div class="row">
+      <button class="b" data-tbl="mergeRight">Sağa birleştir</button>
+      <button class="b" data-tbl="mergeDown">Aşağı birleştir</button>
+      <button class="b" data-tbl="split">Böl</button>
+    </div><div class="lbl">Birleştir</div></div>
+    <div class="grp"><div class="row">
+      <button class="b" id="bCellBg">Hücre rengi</button>
+      <button class="b" data-tbl="noBorder">Kenarlık</button>
+    </div><div class="lbl">Biçim</div></div>
+  </div>
+</div>
+
+<div class="notice" id="notice"></div>
+
+<main id="main">
+  <div class="empty" id="empty">
+    <h2>Telefonda UDF düzenleme</h2>
+    <p>UYAP'tan indirdiğiniz <b>.udf</b> dosyasını açın; metin, tablo, liste ve sayfa düzenini değiştirip geri kaydedin.</p>
+    <div class="row"><button class="wb" id="bOpen2">Dosya aç</button><button class="wb" id="bNew2">Boş belge</button></div>
+    <div class="recent" id="recent" hidden><h3>SON BELGELER</h3><div id="recentList"></div></div>
+  </div>
+  <div class="wrap" id="wrap" hidden><div class="sheet" id="sheet" contenteditable="true" spellcheck="false"></div></div>
+</main>
+
+<div class="status">
+  <span id="stPage">Sayfa : 1 / 1</span>
+  <span id="stPara">Paragraf : 0</span>
+  <span id="stChar">Karakter : 0</span>
+  <span class="g" id="stPaper">A4 Kâğıt</span>
+  <input type="range" id="zoomR" min="50" max="200" value="125">
+  <span class="z" id="stZoom">%125</span>
+  <span id="stMode">Ekle</span>
+  <span>Türkçe</span>
+</div>
+
+<div class="scrim" id="scrim"></div>
+<div class="panel" id="panel"></div>
+<input type="file" id="fUdf" accept=".udf,application/zip,application/octet-stream">
+<input type="file" id="fImg" accept="image/*">
+
+<script>__UDF_BUNDLE__</script>
+<script>__ENGINE__</script>
+<script src="native-bridge.js"></script>
+</body>
+</html>
