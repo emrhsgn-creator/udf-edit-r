@@ -71,7 +71,9 @@ select.f.sz{max-width:52px}
 /* ---- kanvas ---- */
 main{flex:1 1 auto;overflow:auto;-webkit-overflow-scrolling:touch;background:var(--teal);padding:12px 0 20px}
 .wrap{display:flex;justify-content:center}
-.sheet{background:#fff;color:#000;zoom:var(--zoom);border:1px solid var(--page-edge);outline:none}
+.empty[hidden],.wrap[hidden]{display:none!important}
+.sheet{background:#fff;color:#000;zoom:var(--zoom);border:1px solid var(--page-edge);outline:none;
+  font:12pt/1.42 "Times New Roman",Times,serif}
 body[data-view=write] .sheet{width:calc(100% - 16px);max-width:660px;padding:16px 15px}
 body[data-view=page] .sheet{width:var(--pw);padding:var(--mt) var(--mr) var(--mb) var(--ml)}
 .sheet p{margin:0;font:12pt/1.42 "Times New Roman",Times,serif;min-height:1.42em;word-wrap:break-word}
@@ -113,6 +115,54 @@ body[data-view=page] .sheet{width:var(--pw);padding:var(--mt) var(--mr) var(--mb
 .status input[type=range]{width:82px;accent-color:var(--blue)}
 .status .z{min-width:34px;text-align:right}
 
+
+/* iki satırlı şerit grubu */
+.grp .col{display:flex;flex-direction:column;gap:3px;flex:1}
+.b .cv{font-size:8px;color:#5A6470;margin-left:1px}
+select.f.st{max-width:86px}
+/* biçimlendirme işaretleri */
+.sheet.marks p::after{content:"¶";color:#9BB7CC;font-size:10pt}
+.sheet.marks [data-udf=tab]{background:linear-gradient(transparent 45%,#DCE8F2 45%,#DCE8F2 55%,transparent 55%)}
+
+/* ---- klasik diyalog (UYAP Doküman Editörü penceresi) ---- */
+.dlg{position:fixed;z-index:50;left:50%;top:50%;transform:translate(-50%,-50%);
+  width:min(680px,94vw);max-height:92vh;overflow:auto;background:#EEEEEE;
+  border:1px solid #9A9A9A;border-radius:5px;box-shadow:0 14px 44px rgba(0,0,0,.42);display:none}
+.dlg.on{display:block}
+.dlg .bar{display:flex;align-items:center;gap:9px;padding:7px 9px;
+  background:linear-gradient(#FFFFFF,#DAD6D3);border-bottom:1px solid #C6C2BF;border-radius:4px 4px 0 0}
+.dlg .bar .logo{width:22px;height:22px;border-radius:50%;background:var(--red);flex:0 0 auto;
+  display:flex;align-items:center;justify-content:center;color:#fff;font:700 9px var(--ui)}
+.dlg .bar h3{flex:1;text-align:center;margin:0;font:600 14px var(--ui);color:#2A2A2A}
+.dlg .bar button{background:none;border:0;color:#4A4A4A;font-size:15px;cursor:pointer;padding:2px 7px;border-radius:3px}
+.dlg .bar button:active{background:#00000014}
+.dlg .body{padding:13px}
+.dlg .cols{display:flex;gap:11px;flex-wrap:wrap}
+fieldset.fs{flex:1 1 240px;min-width:230px;border:1px solid #D9D5D2;border-radius:3px;
+  background:#F4F4F4;margin:0 0 11px;padding:9px 11px 11px}
+fieldset.fs legend{font:12.5px var(--ui);color:#3A3A3A;padding:0 5px}
+.frow{display:flex;align-items:center;gap:9px;margin-bottom:7px}
+.frow label{flex:1;font:12.5px var(--ui);color:#2A2A2A}
+.frow input{width:104px;background:#fff;border:1px solid #D9D5D2;border-radius:2px;
+  font:13px var(--ui);color:#222;padding:5px 6px;text-align:left}
+.alrow{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:2px 0 11px}
+.alrow>span{font:12.5px var(--ui);color:#2A2A2A}
+.alrow .ab{flex:1 1 120px;display:flex;align-items:center;justify-content:center;gap:6px;
+  background:#fff;border:1px solid #C9C5C2;border-radius:3px;padding:8px 6px;
+  font:12.5px var(--ui);color:#222;cursor:pointer}
+.alrow .ab u{text-decoration:underline}
+.alrow .ab.on{background:var(--sel);border-color:#8FB6DE}
+.alrow .ab svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round}
+.prev{background:#fff;border:1px solid #D9D5D2;border-radius:2px;padding:7px 8px;height:78px;overflow:hidden}
+.prev p{margin:0;font-family:"Times New Roman",serif;font-size:4.4px;line-height:1.35;color:#333}
+.dact{display:flex;align-items:center;gap:9px;padding:11px 13px;border-top:1px solid #DCD8D5}
+.dact .sp{margin-left:auto}
+.dbtn{min-width:104px;background:linear-gradient(#FFFFFF,#F1EFED);border:1px solid #B9B5B2;
+  border-radius:3px;font:13px var(--ui);color:#1F1F1F;padding:8px 14px;cursor:pointer}
+.dbtn:active{background:#E4E1DE}
+.dbtn u{text-decoration:underline}
+.dbtn.pri{border-color:#7E9CC4;box-shadow:inset 0 0 0 1px #CFE0F2}
+
 /* ---- alt panel ---- */
 .scrim{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;z-index:40}
 .scrim.on{display:block}
@@ -139,11 +189,13 @@ body[data-view=page] .sheet{width:var(--pw);padding:var(--mt) var(--mr) var(--mb
 .hits{font-size:11px;color:#5A6470;margin:-6px 0 10px}
 input[type=file]{display:none}
 
+@page{size:A4;margin:0}
 @media print{
   body{background:#fff}
   .title,.tabs,.ribbon,.status,.notice,.scrim,.panel{display:none!important}
   main{overflow:visible;padding:0;background:#fff}
-  .sheet{zoom:1!important;width:100%!important;border:0;padding:0!important}
+  .sheet{zoom:1!important;width:100%!important;border:0;box-shadow:none;
+    padding:var(--mt) var(--mr) var(--mb) var(--ml)!important}
   .sheet [data-udf=pagebreak]{break-after:page;border:0;color:transparent}
   .sheet td[data-nb="1"]{border:0!important}
 }
@@ -187,36 +239,48 @@ input[type=file]{display:none}
       </div>
     </div><div class="lbl">Pano</div></div>
 
-    <div class="grp"><div class="row">
-      <select class="f" id="selFont"></select>
-      <select class="f sz" id="selSize"></select>
-      <button class="b" data-size="1" title="Büyüt">A⁺</button>
-      <button class="b" data-size="-1" title="Küçült">A⁻</button>
-      <div class="vsep"></div>
-      <button class="b ser" data-cmd="bold"><span class="k">K</span></button>
-      <button class="b ser" data-cmd="italic"><span class="t">T</span></button>
-      <button class="b ser" data-cmd="underline"><span class="a">A</span></button>
-      <button class="b ser" data-cmd="strikeThrough"><s>A</s></button>
-      <button class="b ser" data-cmd="subscript">a<sub>s</sub></button>
-      <button class="b ser" data-cmd="superscript">a<sup>s</sup></button>
-      <div class="vsep"></div>
-      <button class="b" id="bFore" title="Yazı rengi"><span style="font:700 14px var(--ui)">A</span><span class="bar" id="swFore" style="background:#FF1B0F"></span></button>
-      <button class="b" id="bBack" title="Vurgu"><svg viewBox="0 0 24 24"><path d="m15 5 4 4L8.5 19.5 3 21l1.5-5.5z"/></svg><span class="bar" id="swBack" style="background:#FFFF00"></span></button>
-      <button class="b" id="bClear" title="Biçimi temizle"><svg viewBox="0 0 24 24"><path d="M4 7h16M9 7l1 12M15 7l-1 12"/></svg></button>
+    <div class="grp"><div class="col">
+      <div class="row">
+        <select class="f st" id="selStyle"></select>
+        <select class="f" id="selFont"></select>
+        <select class="f sz" id="selSize"></select>
+      </div>
+      <div class="row">
+        <button class="b" data-size="1" title="Büyüt">A<sup>+</sup></button>
+        <button class="b" data-size="-1" title="Küçült">A<sup>−</sup></button>
+        <div class="vsep"></div>
+        <button class="b ser" data-cmd="bold" title="Kalın"><span class="k">K</span></button>
+        <button class="b ser" data-cmd="italic" title="Eğik"><span class="t">T</span></button>
+        <button class="b ser" data-cmd="underline" title="Altı çizili"><span class="a">A</span></button>
+        <button class="b ser" data-cmd="strikeThrough" title="Üstü çizili"><s>a</s></button>
+        <button class="b ser" data-cmd="subscript" title="Alt simge">a<sub>s</sub></button>
+        <button class="b ser" data-cmd="superscript" title="Üst simge">a<sup>s</sup></button>
+        <div class="vsep"></div>
+        <button class="b" id="bClear" title="Biçimi temizle"><svg viewBox="0 0 24 24"><path d="M4 7h16M9 7l1 12M15 7l-1 12M7 4h10"/></svg></button>
+        <button class="b" id="bBack" title="Vurgu"><svg viewBox="0 0 24 24"><path d="m15 5 4 4L8.5 19.5 3 21l1.5-5.5z"/></svg><span class="bar" id="swBack" style="background:#FFFF00"></span></button>
+        <button class="b" id="bFore" title="Yazı rengi"><span style="font:700 14px var(--ui)">A</span><span class="bar" id="swFore" style="background:#FF1B0F"></span></button>
+        <button class="b" id="bCase" title="Büyük/küçük harf">Aa<span class="cv">▾</span></button>
+      </div>
     </div><div class="lbl">Font</div></div>
 
-    <div class="grp"><div class="row">
-      <button class="b" data-list="insertUnorderedList"><svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></svg></button>
-      <button class="b" data-list="insertOrderedList"><svg viewBox="0 0 24 24"><path d="M10 6h10M10 12h10M10 18h10M4 4h1v4M4 12h2l-2 3h2"/></svg></button>
-      <button class="b" data-indent="-18"><svg viewBox="0 0 24 24"><path d="M20 6H10M20 12H10M20 18H10M7 9l-3 3 3 3"/></svg></button>
-      <button class="b" data-indent="18"><svg viewBox="0 0 24 24"><path d="M20 6H10M20 12H10M20 18H10M4 9l3 3-3 3"/></svg></button>
-      <div class="vsep"></div>
-      <button class="b" data-align="left"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 11h10M4 16h16M4 21h10"/></svg></button>
-      <button class="b" data-align="center"><svg viewBox="0 0 24 24"><path d="M4 6h16M7 11h10M4 16h16M7 21h10"/></svg></button>
-      <button class="b" data-align="right"><svg viewBox="0 0 24 24"><path d="M4 6h16M10 11h10M4 16h16M10 21h10"/></svg></button>
-      <button class="b" data-align="justify"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 11h16M4 16h16M4 21h16"/></svg></button>
-      <div class="vsep"></div>
-      <button class="b" id="bSpacing"><svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4 8V4m0 0L2.5 5.5M4 4l1.5 1.5M4 16v4m0 0 1.5-1.5M4 20l-1.5-1.5"/></svg></button>
+    <div class="grp"><div class="col">
+      <div class="row">
+        <button class="b" data-list="insertUnorderedList" title="Madde işareti"><svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></svg><span class="cv">▾</span></button>
+        <button class="b" data-list="insertOrderedList" title="Numaralandırma"><svg viewBox="0 0 24 24"><path d="M10 6h10M10 12h10M10 18h10M4 4h1v4M4 12h2l-2 3h2"/></svg><span class="cv">▾</span></button>
+        <button class="b" id="bMulti" title="Çok düzeyli liste"><svg viewBox="0 0 24 24"><path d="M8 6h12M11 12h9M14 18h6M4 6h.01M7 12h.01M10 18h.01"/></svg></button>
+        <div class="vsep"></div>
+        <button class="b" data-indent="-28.35" title="Girintiyi azalt"><svg viewBox="0 0 24 24"><path d="M20 6H10M20 12H10M20 18H10M7 9l-3 3 3 3"/></svg></button>
+        <button class="b" data-indent="28.35" title="Girintiyi artır"><svg viewBox="0 0 24 24"><path d="M20 6H10M20 12H10M20 18H10M4 9l3 3-3 3"/></svg></button>
+      </div>
+      <div class="row">
+        <button class="b" data-align="left" title="Sola dayalı"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 11h10M4 16h16M4 21h10"/></svg></button>
+        <button class="b" data-align="center" title="Ortalanmış"><svg viewBox="0 0 24 24"><path d="M4 6h16M7 11h10M4 16h16M7 21h10"/></svg></button>
+        <button class="b" data-align="right" title="Sağa dayalı"><svg viewBox="0 0 24 24"><path d="M4 6h16M10 11h10M4 16h16M10 21h10"/></svg></button>
+        <button class="b" data-align="justify" title="İki yana dayalı"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 11h16M4 16h16M4 21h16"/></svg></button>
+        <div class="vsep"></div>
+        <button class="b" id="bSpacing" title="Satır aralığı"><svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4 8V4m0 0L2.5 5.5M4 4l1.5 1.5M4 16v4m0 0 1.5-1.5M4 20l-1.5-1.5"/></svg><span class="cv">▾</span></button>
+        <button class="b" id="bMarks" title="Biçimlendirme işaretleri"><span style="font:600 15px var(--ui)">¶</span></button>
+      </div>
     </div><div class="lbl">Paragraf</div></div>
 
     <div class="grp"><div class="row">
@@ -315,6 +379,7 @@ input[type=file]{display:none}
 </div>
 
 <div class="scrim" id="scrim"></div>
+<div class="dlg" id="dlg"></div>
 <div class="panel" id="panel"></div>
 <input type="file" id="fUdf" accept=".udf,application/zip,application/octet-stream">
 <input type="file" id="fImg" accept="image/*">

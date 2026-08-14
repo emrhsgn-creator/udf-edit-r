@@ -51,6 +51,10 @@ function inlineStyleOf(node,stop){
     if(t==="S"||t==="STRIKE"||t==="DEL")st.s=true;
     if(t==="SUB")st.sub=true;
     if(t==="SUP")st.sup=true;
+    if(t==="FONT"){
+      if(!st.fg&&n.getAttribute("color"))st.fg=hex(n.getAttribute("color"));
+      if(!st.fam&&n.getAttribute("face"))st.fam=n.getAttribute("face").split(",")[0].replace(/['"]/g,"").trim();
+    }
     const y=n.style;
     if(y){
       if(y.fontWeight==="bold"||parseInt(y.fontWeight,10)>=600)st.b=true;
@@ -119,8 +123,25 @@ function paraStyle(p){
 
 function blocksHtml(root){
   const out=[];
-  for(const el of root.children){
+  let buf=[];
+  // Kagida dogrudan yazilan metin hicbir <p> icinde olmayabiliyor. Yalnizca
+  // element cocuklari gezersek bu metin kaydedilirken sessizce kayboluyor;
+  // bu yuzden blok disinda kalanlari toplayip paragrafa sariyoruz.
+  const flush=()=>{
+    if(!buf.length)return;
+    const tmp=document.createElement("p");
+    buf.forEach(n=>tmp.appendChild(n.cloneNode(true)));
+    const h=inlineHtml(tmp);
+    if(h)out.push(`<p>${h}</p>`);
+    buf=[];
+  };
+  const BLOCK={P:1,DIV:1,OL:1,UL:1,TABLE:1};
+  for(const el of root.childNodes){
+    if(el.nodeType===3){ if(el.nodeValue.replace(/\s+/g,""))buf.push(el); continue }
+    if(el.nodeType!==1)continue;
     const T=el.tagName;
+    if(!BLOCK[T]&&!(el.dataset&&el.dataset.udf==="pagebreak")){ buf.push(el); continue }
+    flush();
     if(el.dataset&&el.dataset.udf==="pagebreak"){out.push("<page-break/>");continue}
     if(T==="P"||T==="DIV"){out.push(`<p${paraStyle(el)}>${inlineHtml(el)}</p>`);continue}
     if(T==="OL"||T==="UL"){
@@ -143,6 +164,7 @@ function blocksHtml(root){
       out.push(`<table>${rows}</table>`);continue}
     out.push(`<p>${inlineHtml(el)}</p>`);
   }
+  flush();
   return out.join("");
 }
 const editorToUdfHtml=()=>blocksHtml(sheet)||"<p></p>";
@@ -231,6 +253,7 @@ function eachPara(fn){
 
 /* ================= KOMUTLAR ================= */
 document.execCommand("styleWithCSS",false,true);
+try{document.execCommand("defaultParagraphSeparator",false,"p")}catch(_){}
 const keep=b=>b.addEventListener("mousedown",e=>e.preventDefault());
 
 document.querySelectorAll("[data-cmd]").forEach(b=>{keep(b);
@@ -281,6 +304,73 @@ $("selFont").onchange=e=>{setFont(e.target.value);sheet.focus();touch()};
 $("selSize").onchange=e=>{setSize(+e.target.value);sheet.focus();touch()};
 $("bClear").onclick=()=>{document.execCommand("removeFormat");sheet.focus();sync();touch()};
 
+
+/* ---- Gövde / başlık stilleri (UYAP'taki stil açılır listesi) ---- */
+const STYLES={
+  "Gövde":       {size:12, bold:false, align:"justify"},
+  "Başlık 1":    {size:16, bold:true,  align:"center"},
+  "Başlık 2":    {size:14, bold:true,  align:"left"},
+  "Başlık 3":    {size:12, bold:true,  align:"left"},
+  "Alıntı":      {size:11, bold:false, align:"justify", ml:28.35}
+};
+Object.keys(STYLES).forEach(k=>{
+  const o=document.createElement("option");o.value=o.textContent=k;$("selStyle").appendChild(o)});
+$("selStyle").onchange=e=>{
+  const st=STYLES[e.target.value]; if(!st)return;
+  eachPara(p=>{
+    p.style.textAlign=st.align;
+    p.style.marginLeft=(st.ml||0)+"pt";
+    p.querySelectorAll("span").forEach(sp=>{sp.style.fontSize=st.size+"pt"});
+    if(!p.querySelector("span"))p.style.fontSize=st.size+"pt";
+    p.style.fontWeight=st.bold?"bold":"";
+  });
+  sheet.focus();touch();
+};
+
+/* ---- Büyük/küçük harf ---- */
+$("bCase").onclick=()=>{
+  const sel=String(getSelection());
+  if(!sel){showNotice('<span class="mk">!</span><span>Önce dönüştürülecek metni seçin.</span>');
+    setTimeout(hideNotice,2500);return}
+  panel("Büyük/küçük harf",
+    `<div class="chips">
+       <button data-c="upper">BÜYÜK HARF</button>
+       <button data-c="lower">küçük harf</button>
+       <button data-c="title">Her Kelime Büyük</button>
+       <button data-c="sentence">Cümle düzeni</button>
+     </div>`,
+    ()=>$("panel").querySelectorAll("[data-c]").forEach(b=>b.onclick=()=>{
+      const t=String(getSelection());
+      let r=t;
+      // Türkçe'ye özgü: i→İ, ı→I dönüşümü locale ile doğru çalışır
+      if(b.dataset.c==="upper")r=t.toLocaleUpperCase("tr-TR");
+      if(b.dataset.c==="lower")r=t.toLocaleLowerCase("tr-TR");
+      if(b.dataset.c==="title")r=t.toLocaleLowerCase("tr-TR").replace(/(^|\s)(\S)/g,
+        (m,a,c)=>a+c.toLocaleUpperCase("tr-TR"));
+      if(b.dataset.c==="sentence"){r=t.toLocaleLowerCase("tr-TR")
+        .replace(/(^\s*|[.!?]\s+)(\S)/g,(m,a,c)=>a+c.toLocaleUpperCase("tr-TR"))}
+      document.execCommand("insertText",false,r);
+      closePanel();sheet.focus();touch();
+    }));
+};
+
+/* ---- Biçimlendirme işaretleri ---- */
+$("bMarks").onclick=()=>{
+  const on=sheet.classList.toggle("marks");
+  $("bMarks").classList.toggle("on",on);
+  sheet.focus();
+};
+
+/* ---- Çok düzeyli liste ---- */
+$("bMulti").onclick=()=>{
+  document.execCommand("insertOrderedList");
+  document.execCommand("indent");
+  sheet.focus();sync();touch();
+  showNotice('<span class="mk">i</span><span>UDF biçimi iç içe listeleri tek düzeye '+
+    'indiriyor; kaydettiğinizde alt seviyeler düzleşir.</span>');
+  setTimeout(hideNotice,5000);
+};
+
 function sync(){
   try{document.querySelectorAll("[data-cmd]").forEach(b=>{
     if(["cut","copy","paste"].includes(b.dataset.cmd))return;
@@ -301,18 +391,45 @@ let tId;
 function touch(){setDirty(true);clearTimeout(tId);tId=setTimeout(()=>{stats();saveRecent()},600)}
 
 sheet.addEventListener("input",()=>{
-  sheet.querySelectorAll("div:not([data-udf])").forEach(d=>{
-    if(d.closest("td"))return;
-    const p=document.createElement("p");p.style.cssText=d.style.cssText;
-    while(d.firstChild)p.appendChild(d.firstChild);d.replaceWith(p)});
-  sheet.querySelectorAll("font").forEach(f=>{
-    const s=document.createElement("span");
-    if(f.color)s.style.color=f.color;if(f.face)s.style.fontFamily=f.face;
-    while(f.firstChild)s.appendChild(f.firstChild);f.replaceWith(s)});
+  // DİKKAT: burada DOM'u yeniden yazmıyoruz. Önceki sürümde her tuş vuruşunda
+  // <div> yerine yeni bir <p> konuyordu; imleç silinen düğümün içinde kaldığı
+  // için Enter'dan sonra alt satıra geçilemiyordu. Serileştirici zaten DIV'i
+  // P gibi, <font>'u da satır içi biçim olarak ele alıyor.
   touch();
 });
+
 sheet.addEventListener("paste",e=>{e.preventDefault();
   document.execCommand("insertText",false,(e.clipboardData||window.clipboardData).getData("text/plain"))});
+
+
+/* ---- klavye: Tab sekme eklesin, odak degistirmesin ---- */
+function insertTab(){
+  const s=document.createElement("span");
+  s.dataset.udf="tab"; s.textContent="\u00A0\u00A0\u00A0\u00A0";
+  insertNode(s);
+}
+sheet.addEventListener("keydown",e=>{
+  if(e.key==="Tab"){
+    // contentEditable'da Tab varsayilan olarak odagi degistirir; belgede
+    // sekme beklenirken bu imleci editorden cikariyor.
+    e.preventDefault();
+    if(e.shiftKey){ const p=curPara();
+      if(p)p.style.marginLeft=Math.max(0,(parseFloat(p.style.marginLeft)||0)-18)+"pt" }
+    else insertTab();
+    touch();
+  }
+});
+
+/* ---- kagit her zaman gecerli bir paragrafla baslasin ---- */
+function ensurePara(){
+  if(sheet.querySelector("p,li,table"))return;
+  const p=document.createElement("p");
+  while(sheet.firstChild)p.appendChild(sheet.firstChild);
+  if(!p.firstChild)p.innerHTML="<br>";
+  sheet.appendChild(p);
+}
+sheet.addEventListener("focus",ensurePara);
+sheet.addEventListener("beforeinput",ensurePara);
 
 $("bUndo").onclick=()=>{document.execCommand("undo");sheet.focus();touch()};
 $("bRedo").onclick=()=>{document.execCommand("redo");sheet.focus();touch()};
@@ -333,8 +450,7 @@ function insertNode(node){
   else sheet.appendChild(node);
   touch();
 }
-$("bInsTab").onclick=()=>{const s=document.createElement("span");
-  s.dataset.udf="tab";s.textContent="\u00A0\u00A0\u00A0\u00A0";insertNode(s);sheet.focus()};
+$("bInsTab").onclick=()=>{insertTab();sheet.focus()};
 $("bInsBreak").onclick=()=>{const d=document.createElement("div");
   d.dataset.udf="pagebreak";d.contentEditable="false";d.textContent="— Sayfa sonu —";
   const p=curPara();if(p)p.after(d);else sheet.appendChild(d);
@@ -380,12 +496,129 @@ function tblOp(op){
 }
 document.querySelectorAll("[data-tbl]").forEach(b=>{keep(b);b.onclick=()=>tblOp(b.dataset.tbl)});
 
+
+/* ================= KLASİK DİYALOG ================= */
+/* UYAP Doküman Editörü'nün pencereleri cm kullanıyor; motor ise pt.
+   Dönüşüm tek yerde tutuluyor ki yuvarlama hataları dağılmasın. */
+const CM=28.3465;
+const pt2cm=v=>Math.round((v/CM)*100)/100;
+const cm2pt=v=>Math.round(v*CM*100)/100;
+
+function dialog(title,bodyHtml,actionsHtml,onOpen){
+  $("dlg").innerHTML=
+    `<div class="bar"><div class="logo">UDE</div><h3>${title}</h3>`+
+    `<button id="dlgX" title="Kapat">✕</button></div>`+
+    `<div class="body">${bodyHtml}</div><div class="dact">${actionsHtml}</div>`;
+  $("dlg").classList.add("on"); $("scrim").classList.add("on");
+  $("dlgX").onclick=closeDialog;
+  onOpen&&onOpen();
+}
+function closeDialog(){$("dlg").classList.remove("on");$("scrim").classList.remove("on")}
+
+const ALIGN_BTNS=[
+  ["left","<u>S</u>ola Dayalı","M4 6h16M4 11h10M4 16h16M4 21h10"],
+  ["center","<u>O</u>rtalanmış","M4 6h16M7 11h10M4 16h16M7 21h10"],
+  ["right","<u>S</u>ağa Dayalı","M4 6h16M10 11h10M4 16h16M10 21h10"],
+  ["justify","<u>İ</u>ki Yana Dayalı","M4 6h16M4 11h16M4 16h16M4 21h16"]
+];
+
+function paragraphDialog(){
+  const p=curPara();
+  const g=k=>p?(parseFloat(p.style[k])||0):0;
+  const cur={
+    lh: p&&parseFloat(p.style.lineHeight)?parseFloat(p.style.lineHeight):1.0,
+    before: pt2cm(g("marginTop")), after: pt2cm(g("marginBottom")),
+    ml: pt2cm(g("marginLeft")), mr: pt2cm(g("marginRight")),
+    ti: pt2cm(g("textIndent")),
+    align: p?(p.style.textAlign||"left"):"left"
+  };
+  const first=cur.ti>0?cur.ti:0;
+  const hang =cur.ti<0?-cur.ti:0;
+
+  const body=`
+    <div class="cols">
+      <fieldset class="fs"><legend>Aralık</legend>
+        <div class="frow"><label for="dLh">Satır Aralığı (satır):</label><input id="dLh" value="${cur.lh.toFixed(1)}"></div>
+        <div class="frow"><label for="dBf">önce (cm):</label><input id="dBf" value="${cur.before}"></div>
+        <div class="frow"><label for="dAf">Sonra (cm):</label><input id="dAf" value="${cur.after}"></div>
+      </fieldset>
+      <fieldset class="fs"><legend>Girinti (cm):</legend>
+        <div class="frow"><label for="dFi">İlk Satır (cm):</label><input id="dFi" value="${first}"></div>
+        <div class="frow"><label for="dHa">Asılı (cm):</label><input id="dHa" value="${hang}"></div>
+        <div class="frow"><label for="dMl">Sol girinti (cm):</label><input id="dMl" value="${cur.ml}"></div>
+        <div class="frow"><label for="dMr">Sağ girinti (cm):</label><input id="dMr" value="${cur.mr}"></div>
+      </fieldset>
+    </div>
+    <div class="alrow"><span>Hizalama::</span>
+      ${ALIGN_BTNS.map(([v,lbl,d])=>
+        `<button class="ab${v===cur.align?" on":""}" data-al="${v}">
+           <svg viewBox="0 0 24 24"><path d="${d}"/></svg>${lbl}</button>`).join("")}
+    </div>
+    <fieldset class="fs" style="flex:1 1 100%"><legend>önizleme</legend>
+      <div class="prev" id="dPrev"></div>
+    </fieldset>`;
+
+  const actions=`<button class="dbtn" id="dTab"><u>S</u>ekme</button>
+    <span class="sp"></span>
+    <button class="dbtn pri" id="dOk"><u>T</u>amam</button>
+    <button class="dbtn" id="dNo"><u>V</u>azgeç</button>`;
+
+  dialog("Paragraf",body,actions,()=>{
+    let align=cur.align;
+    const LOREM="abcd abcd abc abcdefghj abcdefg a a a ab ab abcdefgh abcd a abcdefgh abc a a abcd abcdefghjk abcdefghjk abcd abcde abcdefghj ab abcdefgh abc a abcd abcdefghjk ab ab abcdef a abcdef ";
+    const prev=()=>{
+      const st=readVals();
+      $("dPrev").innerHTML=Array.from({length:4},()=>`<p>${LOREM}</p>`).join("");
+      [...$("dPrev").children].forEach((el,i)=>{
+        el.style.textAlign=align;
+        el.style.lineHeight=st.lh;
+        el.style.textIndent=(st.ti/CM*3)+"px";
+        el.style.marginLeft=(st.ml/CM*3)+"px";
+        el.style.marginRight=(st.mr/CM*3)+"px";
+        if(i===0)el.style.marginTop=(st.before/CM*3)+"px";
+        if(i===3)el.style.marginBottom=(st.after/CM*3)+"px";
+      });
+    };
+    const num=id=>{const v=parseFloat(String($(id).value).replace(",","."));return isFinite(v)?v:0};
+    const readVals=()=>{
+      const fi=num("dFi"), ha=num("dHa");
+      return {lh:Math.max(.5,num("dLh")||1), before:cm2pt(num("dBf")), after:cm2pt(num("dAf")),
+              ml:cm2pt(num("dMl")), mr:cm2pt(num("dMr")),
+              ti:cm2pt(ha>0?-ha:fi)};   // asılı girinti negatif ilk satır girintisidir
+    };
+    ["dLh","dBf","dAf","dFi","dHa","dMl","dMr"].forEach(id=>$(id).oninput=prev);
+    $("dlg").querySelectorAll("[data-al]").forEach(b=>b.onclick=()=>{
+      align=b.dataset.al;
+      $("dlg").querySelectorAll("[data-al]").forEach(x=>x.classList.toggle("on",x===b));
+      prev();
+    });
+    prev();
+
+    $("dNo").onclick=closeDialog;
+    $("dTab").onclick=()=>{closeDialog();insertTab();sheet.focus()};
+    $("dOk").onclick=()=>{
+      const v=readVals(), ha=num("dHa");
+      eachPara(el=>{
+        el.style.lineHeight=v.lh;
+        el.style.marginTop=v.before+"pt";
+        el.style.marginBottom=v.after+"pt";
+        el.style.marginRight=v.mr+"pt";
+        el.style.textIndent=v.ti+"pt";
+        // Asılı girintide gövde sağa kayar, ilk satır sola taşar
+        el.style.marginLeft=(ha>0? v.ml+cm2pt(ha) : v.ml)+"pt";
+        el.style.textAlign=align;
+      });
+      closeDialog(); sheet.focus(); sync(); touch();
+    };
+  });
+}
+
 /* ================= PANELLER ================= */
 function panel(title,body,onOpen){
   $("panel").innerHTML=`<h3>${title}</h3>${body}`;
   $("panel").classList.add("on");$("scrim").classList.add("on");onOpen&&onOpen()}
 function closePanel(){$("panel").classList.remove("on");$("scrim").classList.remove("on")}
-$("scrim").onclick=closePanel;
+$("scrim").onclick=()=>{closePanel();closeDialog()};
 
 function colorPanel(title,cur,apply){
   panel(title,`<div class="colors">${PALETTE.map(c=>`<button data-c="${c}" style="background:${c}"></button>`).join("")}</div>
@@ -404,7 +637,8 @@ $("bSpacing").onclick=()=>panel("Satır aralığı",
   ()=>$("panel").querySelectorAll("[data-v]").forEach(b=>b.onclick=()=>{
     eachPara(p=>p.style.lineHeight=b.dataset.v);closePanel();sheet.focus();touch()}));
 
-$("bParaFmt").onclick=()=>panel("Paragraf",
+$("bParaFmt").onclick=paragraphDialog;
+const _oldParaPanel=()=>panel("Paragraf",
   `<div class="fld"><label>Girinti (pt)</label><div class="two">
      <input id="pl" type="number" placeholder="Sol" value="0"><input id="pr" type="number" placeholder="Sağ" value="0"></div></div>
    <div class="fld"><label>Aralık (pt)</label><div class="two">
@@ -483,8 +717,19 @@ $("bView").onclick=()=>{const w=document.body.dataset.view==="write";
   document.body.dataset.view=w?"page":"write";
   $("bView").classList.toggle("on",w);
   if(w)fitPage();else{doc.zoom=125;applyZoom()}};
-$("bPdf").onclick=()=>{const v=document.body.dataset.view;document.body.dataset.view="page";
-  setTimeout(()=>{print();document.body.dataset.view=v},120)};
+/* PDF çıktısı. Android WebView'da window.print() sessizce hiçbir şey yapmaz;
+   uygulama içinde native-bridge bu fonksiyonun üzerine yazıp sistemin
+   yazdırma servisini çağırıyor ("PDF olarak kaydet" oradan çıkıyor). */
+window.exportPdf=()=>{
+  const v=document.body.dataset.view;
+  document.body.dataset.view="page";
+  document.body.classList.add("printing");
+  setTimeout(()=>{
+    try{ window.print() }catch(_){}
+    setTimeout(()=>{document.body.dataset.view=v;document.body.classList.remove("printing")},400);
+  },150);
+};
+$("bPdf").onclick=()=>window.exportPdf();
 $("bSaveAs").onclick=()=>panel("Farklı kaydet",
   `<div class="fld"><label>Dosya adı</label><input id="sn" value="${esc(doc.name.replace(/\.udf$/i,""))}"></div>
    <div class="pact"><button class="wb" id="snC">Vazgeç</button><button class="wb pri" id="snOk">Kaydet</button></div>`,
@@ -506,5 +751,12 @@ addEventListener("keydown",e=>{
   if(k==="o"){e.preventDefault();$("fUdf").click()}
 });
 addEventListener("beforeunload",e=>{if(doc.dirty){e.preventDefault();e.returnValue=""}});
+
+
+/* Sınamaların erişebilmesi için: top-level const/let bağlantıları window
+   üzerinde görünmüyor (fonksiyon bildirimlerinin aksine). */
+window.editorToUdfHtml=editorToUdfHtml;
+window.udfHtmlToEditor=udfHtmlToEditor;
+window.doc=doc;
 
 loadRecent();applyZoom();
