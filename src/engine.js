@@ -10,7 +10,7 @@ const PALETTE=["#000000","#333333","#666666","#999999","#FFFFFF","#B22222","#C00
                "#FF9900","#FFC000","#FFFF00","#92D050","#00B050","#00B0F0","#0070C0","#003366",
                "#7030A0","#FF00FF","#FFCCCC","#FFE699","#FFF2CC","#D9EAD3","#CFE2F3","#EAD1DC"];
 
-const doc={name:"isimsiz.UDF",dirty:false,loaded:false,fore:"#FF1B0F",back:"#FFFF00",zoom:125,
+const doc={name:"isimsiz.UDF",kaynakUri:null,dirty:false,loaded:false,fore:"#FF1B0F",back:"#FFFF00",zoom:125,
   page:{w:595.28,h:841.89,mt:56.7,mr:56.7,mb:56.7,ml:56.7,orient:1}};
 
 const store={
@@ -243,13 +243,34 @@ addEventListener("resize",()=>{if(document.body.dataset.view==="page")fitPage()}
 function curBlock(sel){const s=getSelection();if(!s.rangeCount)return null;
   let n=s.getRangeAt(0).startContainer;if(n.nodeType===3)n=n.parentElement;return n?n.closest(sel):null}
 const curPara=()=>curBlock("p,li,div"), curCell=()=>curBlock("td"), curTable=()=>curBlock("table");
-function eachPara(fn){
+/* Pencere veya panel açılınca odak editörden çıkıyor ve seçim kayboluyor.
+   Bu yüzden hedef paragrafları AÇILIŞTA yakalayıp saklıyoruz; "Tamam"a
+   basıldığında seçime değil bu listeye uyguluyoruz. */
+let savedRange=null;
+function saveSel(){
   const s=getSelection();
-  if(!s.rangeCount){const p=curPara();if(p)fn(p);return}
-  const r=s.getRangeAt(0);
-  const all=[...sheet.querySelectorAll("p,li")].filter(p=>r.intersectsNode(p));
-  (all.length?all:[curPara()].filter(Boolean)).forEach(fn);
+  savedRange=(s.rangeCount&&sheet.contains(s.getRangeAt(0).commonAncestorContainer))
+    ? s.getRangeAt(0).cloneRange() : null;
 }
+function restoreSel(){
+  if(!savedRange)return;
+  const s=getSelection(); s.removeAllRanges(); s.addRange(savedRange);
+}
+function paraList(){
+  const s=getSelection();
+  if(s.rangeCount&&sheet.contains(s.getRangeAt(0).commonAncestorContainer)){
+    const r=s.getRangeAt(0);
+    const all=[...sheet.querySelectorAll("p,li")].filter(p=>r.intersectsNode(p));
+    if(all.length)return all;
+  }
+  if(savedRange){
+    const all=[...sheet.querySelectorAll("p,li")].filter(p=>savedRange.intersectsNode(p));
+    if(all.length)return all;
+  }
+  const p=curPara();
+  return (p&&sheet.contains(p))?[p]:[...sheet.querySelectorAll("p,li")].slice(0,1);
+}
+function eachPara(fn){ paraList().forEach(fn) }
 
 /* ================= KOMUTLAR ================= */
 document.execCommand("styleWithCSS",false,true);
@@ -282,6 +303,7 @@ function curFont(){const s=getSelection();if(!s.rangeCount)return "Times New Rom
   return "Times New Roman"}
 
 function wrapSel(apply){
+  restoreSel();
   const s=getSelection();if(!s.rangeCount)return;
   if(s.getRangeAt(0).collapsed){const p=curPara();
     if(p){if(!p.querySelector("span"))apply(p);else p.querySelectorAll("span").forEach(apply)}return}
@@ -340,6 +362,7 @@ $("bCase").onclick=()=>{
        <button data-c="sentence">Cümle düzeni</button>
      </div>`,
     ()=>$("panel").querySelectorAll("[data-c]").forEach(b=>b.onclick=()=>{
+      restoreSel();
       const t=String(getSelection());
       let r=t;
       // Türkçe'ye özgü: i→İ, ı→I dönüşümü locale ile doğru çalışır
@@ -505,6 +528,7 @@ const pt2cm=v=>Math.round((v/CM)*100)/100;
 const cm2pt=v=>Math.round(v*CM*100)/100;
 
 function dialog(title,bodyHtml,actionsHtml,onOpen){
+  saveSel();
   $("dlg").innerHTML=
     `<div class="bar"><div class="logo">UDE</div><h3>${title}</h3>`+
     `<button id="dlgX" title="Kapat">✕</button></div>`+
@@ -565,6 +589,7 @@ function paragraphDialog(){
 
   dialog("Paragraf",body,actions,()=>{
     let align=cur.align;
+    const hedefler=paraList();   // odak pencereye geçmeden önce yakalandı
     const LOREM="abcd abcd abc abcdefghj abcdefg a a a ab ab abcdefgh abcd a abcdefgh abc a a abcd abcdefghjk abcdefghjk abcd abcde abcdefghj ab abcdefgh abc a abcd abcdefghjk ab ab abcdef a abcdef ";
     const prev=()=>{
       const st=readVals();
@@ -598,7 +623,7 @@ function paragraphDialog(){
     $("dTab").onclick=()=>{closeDialog();insertTab();sheet.focus()};
     $("dOk").onclick=()=>{
       const v=readVals(), ha=num("dHa");
-      eachPara(el=>{
+      hedefler.forEach(el=>{
         el.style.lineHeight=v.lh;
         el.style.marginTop=v.before+"pt";
         el.style.marginBottom=v.after+"pt";
@@ -615,6 +640,7 @@ function paragraphDialog(){
 
 /* ================= PANELLER ================= */
 function panel(title,body,onOpen){
+  saveSel();
   $("panel").innerHTML=`<h3>${title}</h3>${body}`;
   $("panel").classList.add("on");$("scrim").classList.add("on");onOpen&&onOpen()}
 function closePanel(){$("panel").classList.remove("on");$("scrim").classList.remove("on")}
@@ -734,12 +760,13 @@ $("bSaveAs").onclick=()=>panel("Farklı kaydet",
   `<div class="fld"><label>Dosya adı</label><input id="sn" value="${esc(doc.name.replace(/\.udf$/i,""))}"></div>
    <div class="pact"><button class="wb" id="snC">Vazgeç</button><button class="wb pri" id="snOk">Kaydet</button></div>`,
   ()=>{$("snC").onclick=closePanel;
-    $("snOk").onclick=async()=>{await saveUdf($("sn").value.trim()||"belge");closePanel()}});
+    $("snOk").onclick=async()=>{const n=$("sn").value.trim()||"belge";
+      await (window.saveUdfAs||saveUdf)(n);closePanel()}});
 
 $("bOpen").onclick=$("bOpen2").onclick=()=>$("fUdf").click();
 $("fUdf").onchange=e=>{const f=e.target.files[0];if(f)openFile(f);e.target.value=""};
 $("bSave").onclick=()=>{if(doc.loaded)saveUdf()};
-const newDoc=()=>{hideNotice();doc.page={w:595.28,h:841.89,mt:56.7,mr:56.7,mb:56.7,ml:56.7,orient:1};
+const newDoc=()=>{hideNotice();doc.kaynakUri=null;doc.page={w:595.28,h:841.89,mt:56.7,mr:56.7,mb:56.7,ml:56.7,orient:1};
   load('<p style="text-align:justify"><br></p>',"isimsiz.UDF");sheet.focus()};
 $("bNew").onclick=newDoc;$("bNew2").onclick=newDoc;
 
