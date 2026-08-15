@@ -76,15 +76,16 @@ main{flex:1 1 auto;overflow:auto;-webkit-overflow-scrolling:touch;background:var
   font:12pt/1.42 "Times New Roman",Times,serif}
 body[data-view=write] .sheet{width:calc(100% - 16px);max-width:660px;padding:16px 15px}
 body[data-view=page] .sheet{width:var(--pw);padding:var(--mt) var(--mr) var(--mb) var(--ml)}
-.sheet p{margin:0;font:12pt/1.42 "Times New Roman",Times,serif;min-height:1.42em;word-wrap:break-word}
-.sheet li{font:12pt/1.42 "Times New Roman",Times,serif}
+.sheet p{margin:0;font:12pt/1.42 "Times New Roman",Times,serif;min-height:1.42em;
+  word-wrap:break-word;white-space:pre-wrap;tab-size:8;-moz-tab-size:8}
+.sheet li{font:12pt/1.42 "Times New Roman",Times,serif;white-space:pre-wrap;tab-size:8;-moz-tab-size:8}
 .sheet ol,.sheet ul{margin:0;padding-left:28pt}
 .sheet table{border-collapse:collapse;margin:4pt 0;width:100%}
 .sheet td{border:.5px solid #000;padding:4px;vertical-align:top;min-width:24pt}
 .sheet td[data-nb="1"]{border:.5px dashed #D8D8D8!important}
 .sheet td.sel{outline:2px solid var(--blue);outline-offset:-2px}
 .sheet img{max-width:100%}
-.sheet [data-udf=tab]{display:inline-block;min-width:28pt;white-space:pre}
+.sheet [data-udf=tab]{white-space:pre}
 .sheet [data-udf=pagebreak]{display:block;text-align:center;font:9pt var(--ui);color:#9AA;
   border-top:1px dashed #BBB;border-bottom:1px dashed #BBB;margin:8pt 0;padding:2pt;user-select:none}
 
@@ -122,7 +123,7 @@ body[data-view=page] .sheet{width:var(--pw);padding:var(--mt) var(--mr) var(--mb
 select.f.st{max-width:86px}
 /* biçimlendirme işaretleri */
 .sheet.marks p::after{content:"¶";color:#9BB7CC;font-size:10pt}
-.sheet.marks [data-udf=tab]{background:linear-gradient(transparent 45%,#DCE8F2 45%,#DCE8F2 55%,transparent 55%)}
+.sheet.marks p{background-image:none}
 
 /* ---- klasik diyalog (UYAP Doküman Editörü penceresi) ---- */
 .dlg{position:fixed;z-index:50;left:50%;top:50%;transform:translate(-50%,-50%);

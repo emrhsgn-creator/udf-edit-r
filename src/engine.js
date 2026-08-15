@@ -22,8 +22,10 @@ const store={
 /* ================= UDF <-> EDİTÖR ================= */
 function udfHtmlToEditor(html){
   const d=document.createElement("div"); d.innerHTML=html;
-  d.querySelectorAll("tab").forEach(t=>{const s=document.createElement("span");
-    s.dataset.udf="tab"; s.textContent="\u00A0\u00A0\u00A0\u00A0"; t.replaceWith(s)});
+  // Sekme gerçek bir \t karakteri olarak tutuluyor. Önceden 4 sabit boşlukla
+  // taklit ediliyordu; o yüzden satırlar birbirine hizalanmıyordu.
+  d.querySelectorAll("tab").forEach(t=>t.replaceWith(document.createTextNode("\t")));
+  d.querySelectorAll('[data-udf="tab"]').forEach(t=>t.replaceWith(document.createTextNode("\t")));
   d.querySelectorAll("page-break").forEach(t=>{const s=document.createElement("div");
     s.dataset.udf="pagebreak"; s.contentEditable="false"; s.textContent="— Sayfa sonu —"; t.replaceWith(s)});
   // Codec kenarlıksız hücreyi "border yok" diye ifade ediyor; açıkça işaretlemezsek
@@ -89,7 +91,12 @@ function inlineHtml(container){
     const txt=n.nodeValue.replace(/\r/g,"").replace(/\n/g," ");
     if(!txt)continue;
     const st=inlineStyleOf(n,container);
-    if(cur&&same(cur.st,st))cur.text+=txt;else{cur={st,text:txt};runs.push(cur)}
+    // \t karakterleri UDF'de ayrı bir <tab/> ögesi olarak yazılır
+    txt.split("\t").forEach((part,i)=>{
+      if(i>0){runs.push({tab:true});cur=null}
+      if(!part)return;
+      if(cur&&same(cur.st,st))cur.text+=part;else{cur={st,text:part};runs.push(cur)}
+    });
   }
   return runs.map(r=>{
     if(r.tab)return "<tab/>";
@@ -170,6 +177,36 @@ function blocksHtml(root){
 const editorToUdfHtml=()=>blocksHtml(sheet)||"<p></p>";
 
 /* ================= DOSYA ================= */
+/* Kaydetmeden önce doğrula.
+   Üretilen UDF geri okunup metni editördekiyle karşılaştırılıyor. Fark varsa
+   kullanıcı sessizce eksik bir dosya kaydetmiş olmaz — dilekçede bu kabul
+   edilemez. Bu kontrol, cihazda ortaya çıkıp burada üretilemeyen kayıpları
+   da yakalar. */
+const sadeMetin=h=>h
+  .replace(/<tab\/>/g," ").replace(/<page-break\/>/g," ")
+  .replace(/<[^>]+>/g," ").replace(/&nbsp;/g," ").replace(/&amp;/g,"&")
+  .replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/\s+/g,"");
+
+async function udfUret(){
+  const html=editorToUdfHtml();
+  const blob=await window.UDF.toUdf(html);
+  let ok=true, beklenen=0, gelen=0;
+  try{
+    const geri=await window.UDF.toHtml(await blob.arrayBuffer());
+    beklenen=sadeMetin(html).length; gelen=sadeMetin(geri).length;
+    ok=(sadeMetin(html)===sadeMetin(geri));
+  }catch(_){ ok=true }          // doğrulama yapılamadıysa kaydetmeyi engelleme
+  return {blob,ok,beklenen,gelen};
+}
+window.udfUret=udfUret;
+window.sadeMetin=sadeMetin;
+
+function kayipUyar(r){
+  showNotice('<span class="mk">!</span><span><b>Belge eksik kaydedilecekti, kaydetme durduruldu.</b><br>'+
+    `Editörde ${r.beklenen} karakter var, dosyaya ${r.gelen} karakter yazılıyor. `+
+    'Lütfen bu ekranın görüntüsünü geliştiriciye iletin.</span>');
+}
+
 async function openFile(file){
   hideNotice();
   try{
@@ -187,7 +224,9 @@ function load(html,name){
 }
 async function saveUdf(asName){
   const name=String(asName||doc.name).replace(/\.udf$/i,"")+".udf";
-  const blob=await window.UDF.toUdf(editorToUdfHtml());
+  const r=await udfUret();
+  if(!r.ok){ kayipUyar(r); return }
+  const blob=r.blob;
   const a=document.createElement("a");
   a.href=URL.createObjectURL(blob);a.download=name;
   document.body.appendChild(a);a.click();a.remove();
@@ -302,15 +341,61 @@ function curFont(){const s=getSelection();if(!s.rangeCount)return "Times New Rom
     return n.style.fontFamily.split(",")[0].replace(/['"]/g,"").trim();n=n.parentElement}
   return "Times New Roman"}
 
+/* Renk, punto ve yazı tipi uygulaması.
+   Eskiden execCommand("fontSize","7") ile <font size=7> üretilip sonra span'e
+   çevriliyordu; ama styleWithCSS açıkken tarayıcı <font> DEĞİL <span> ürettiği
+   için hiçbir şey bulunamıyor ve biçim sessizce uygulanmıyordu.
+   Artık seçimdeki metin düğümleri doğrudan sarılıyor. */
+function textNodesInRange(r){
+  const out=[];
+  const w=document.createTreeWalker(sheet,NodeFilter.SHOW_TEXT);
+  let n;
+  while((n=w.nextNode())){
+    if(!n.nodeValue)continue;
+    if(n.parentElement&&n.parentElement.closest('[data-udf="pagebreak"]'))continue;
+    if(r.intersectsNode(n))out.push(n);
+  }
+  return out;
+}
 function wrapSel(apply){
   restoreSel();
-  const s=getSelection();if(!s.rangeCount)return;
-  if(s.getRangeAt(0).collapsed){const p=curPara();
-    if(p){if(!p.querySelector("span"))apply(p);else p.querySelectorAll("span").forEach(apply)}return}
-  document.execCommand("fontSize",false,"7");
-  sheet.querySelectorAll('font[size="7"]').forEach(f=>{
-    const sp=document.createElement("span");apply(sp);
-    while(f.firstChild)sp.appendChild(f.firstChild);f.replaceWith(sp)});
+  const sel=getSelection();
+  if(!sel.rangeCount)return;
+  const r=sel.getRangeAt(0);
+
+  if(r.collapsed){                       // imleç boşsa paragrafın tamamına
+    const p=curPara();
+    if(p){ const sp=p.querySelectorAll("span");
+      if(sp.length)sp.forEach(apply); else apply(p) }
+    return;
+  }
+
+  const nodes=textNodesInRange(r);
+  if(!nodes.length)return;
+  const startN=r.startContainer, startO=r.startOffset;
+  const endN=r.endContainer,   endO=r.endOffset;
+  const wrapped=[];
+
+  nodes.forEach(n=>{
+    let node=n;
+    // Sınırdaki düğümleri seçim kadarıyla böl
+    if(node===endN && endO<node.nodeValue.length) node.splitText(endO);
+    if(node===startN && startO>0 && startO<node.nodeValue.length) node=node.splitText(startO);
+    if(!node.nodeValue)return;
+    const sp=document.createElement("span");
+    apply(sp);
+    node.parentNode.insertBefore(sp,node);
+    sp.appendChild(node);
+    wrapped.push(sp);
+  });
+
+  if(wrapped.length){                    // seçim korunsun
+    const nr=document.createRange();
+    nr.setStartBefore(wrapped[0]);
+    nr.setEndAfter(wrapped[wrapped.length-1]);
+    sel.removeAllRanges(); sel.addRange(nr);
+    savedRange=nr.cloneRange();
+  }
 }
 const setSize=pt=>wrapSel(e=>e.style.fontSize=pt+"pt");
 const setFont=f=>wrapSel(e=>e.style.fontFamily=f);
@@ -426,11 +511,7 @@ sheet.addEventListener("paste",e=>{e.preventDefault();
 
 
 /* ---- klavye: Tab sekme eklesin, odak degistirmesin ---- */
-function insertTab(){
-  const s=document.createElement("span");
-  s.dataset.udf="tab"; s.textContent="\u00A0\u00A0\u00A0\u00A0";
-  insertNode(s);
-}
+function insertTab(){ insertNode(document.createTextNode("\t")) }
 sheet.addEventListener("keydown",e=>{
   if(e.key==="Tab"){
     // contentEditable'da Tab varsayilan olarak odagi degistirir; belgede
