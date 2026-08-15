@@ -8,7 +8,7 @@
     "android:prepare": "npm run build && cap add android || true && node scripts/patch-android.mjs && cap sync android",
     "android:build": "npm run android:prepare && cd android && ./gradlew assembleDebug",
     "build": "node src/build.mjs",
-    "test": "node scripts/test-codec.mjs && node scripts/test-editor.mjs"
+    "test": "npm run build && node scripts/test-codec.mjs && node scripts/test-editor.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.0.0",
