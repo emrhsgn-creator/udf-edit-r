@@ -10,7 +10,7 @@ const PALETTE=["#000000","#333333","#666666","#999999","#FFFFFF","#B22222","#C00
                "#FF9900","#FFC000","#FFFF00","#92D050","#00B050","#00B0F0","#0070C0","#003366",
                "#7030A0","#FF00FF","#FFCCCC","#FFE699","#FFF2CC","#D9EAD3","#CFE2F3","#EAD1DC"];
 
-const doc={name:"isimsiz.UDF",kaynakUri:null,dirty:false,loaded:false,fore:"#FF1B0F",back:"#FFFF00",zoom:125,
+const doc={name:"isimsiz.UDF",kaynakUri:null,sayfaHam:null,dirty:false,loaded:false,fore:"#FF1B0F",back:"#FFFF00",zoom:125,
   page:{w:595.28,h:841.89,mt:56.7,mr:56.7,mb:56.7,ml:56.7,orient:1}};
 
 const store={
@@ -117,12 +117,9 @@ function inlineHtml(container){
     const txt=n.nodeValue.replace(/\r/g,"").replace(/\n/g," ");
     if(!txt)continue;
     const st=inlineStyleOf(n,container);
-    // \t karakterleri UDF'de ayrı bir <tab/> ögesi olarak yazılır
-    txt.split("\t").forEach((part,i)=>{
-      if(i>0){runs.push({tab:true});cur=null}
-      if(!part)return;
-      if(cur&&same(cur.st,st))cur.text+=part;else{cur={st,text:part};runs.push(cur)}
-    });
+    // \t olduğu gibi korunuyor: codec bunu CDATA'ya birebir yazıyor ve
+    // orijinal belgedeki gösterimle aynı oluyor.
+    if(cur&&same(cur.st,st))cur.text+=txt;else{cur={st,text:txt};runs.push(cur)}
   }
   return runs.map(r=>{
     if(r.tab)return "<tab/>";
@@ -214,9 +211,20 @@ const sadeMetin=h=>h
   .replace(/<[^>]+>/g," ").replace(/&nbsp;/g," ").replace(/&amp;/g,"&")
   .replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/\s+/g,"");
 
+/* Kaydederken yazılacak sayfa düzeni. Belgeden okunan diğer alanlar
+   (kağıt boyutu, üstbilgi/altbilgi payları) aynen korunuyor. */
+function sayfaNesnesi(){
+  const p=doc.page;
+  return Object.assign({mediaSizeName:1,headerFOffset:20,footerFOffset:20},doc.sayfaHam||{},{
+    leftMargin:p.ml, rightMargin:p.mr, topMargin:p.mt, bottomMargin:p.mb,
+    paperOrientation:p.orient
+  });
+}
+window.sayfaNesnesi=sayfaNesnesi;
+
 async function udfUret(){
   const html=editorToUdfHtml();
-  const blob=await window.UDF.toUdf(html);
+  const blob=await window.UDF.toUdf(html,sayfaNesnesi());
   let ok=true, beklenen=0, gelen=0;
   try{
     const geri=await window.UDF.toHtml(await blob.arrayBuffer());
@@ -237,7 +245,18 @@ function kayipUyar(r){
 async function openFile(file){
   hideNotice();
   try{
-    const html=await window.UDF.toHtml(await file.arrayBuffer());
+    const ab=await file.arrayBuffer();
+    const html=await window.UDF.toHtml(ab);
+    // Sayfa düzeni codec'in HTML katmanında taşınmıyor; arşivden ayrıca okunuyor.
+    const sf=await window.UDF.sayfaOku(ab);
+    if(sf){
+      if(sf.leftMargin!==undefined)doc.page.ml=sf.leftMargin;
+      if(sf.rightMargin!==undefined)doc.page.mr=sf.rightMargin;
+      if(sf.topMargin!==undefined)doc.page.mt=sf.topMargin;
+      if(sf.bottomMargin!==undefined)doc.page.mb=sf.bottomMargin;
+      if(sf.paperOrientation!==undefined)doc.page.orient=sf.paperOrientation;
+      doc.sayfaHam=sf;                       // diğer alanlar aynen geri yazılsın
+    }
     load(udfHtmlToEditor(html),file.name);
   }catch(e){
     showNotice(`<span class="mk">!</span><span><b>Dosya açılamadı.</b> ${esc(String(e.message||e))}</span>`);
@@ -278,8 +297,27 @@ function stats(){
   const txt=sheet.innerText||"";
   $("stPara").textContent="Paragraf : "+sheet.querySelectorAll("p,li").length;
   $("stChar").textContent="Karakter : "+txt.replace(/\n/g,"").length.toLocaleString("tr-TR");
-  const pages=1+sheet.querySelectorAll('[data-udf="pagebreak"]').length;
-  $("stPage").textContent=`Sayfa : 1 / ${pages}`;
+  $("stPage").textContent="Sayfa : "+sayfaBilgisi();
+}
+
+/* Sayfa sayısı yalnızca açık sayfa sonlarından hesaplanıyordu; belge doğal
+   taşmayla dokuz sayfa olsa bile 1/1 görünüyordu. Artık içerik yüksekliği
+   gerçek sayfa yüksekliğine bölünerek bulunuyor. */
+function sayfaBilgisi(){
+  const p=doc.page,land=p.orient===0;
+  const sayfaPt=(land?p.w:p.h)-p.mt-p.mb;      // yazılabilir yükseklik
+  const zoom=(doc.zoom||100)/100;
+  const icerikPt=((sheet.scrollHeight/zoom)*0.75)-p.mt-p.mb;
+  let toplam=Math.max(1,Math.ceil(icerikPt/Math.max(1,sayfaPt)));
+  toplam+=sheet.querySelectorAll('[data-udf="pagebreak"]').length;
+  // imlecin bulunduğu sayfa
+  let simdi=1;
+  const el=curPara();
+  if(el){
+    const ust=(el.offsetTop/zoom)*0.75;
+    simdi=Math.min(toplam,Math.max(1,Math.floor(ust/Math.max(1,sayfaPt))+1));
+  }
+  return simdi+" / "+toplam;
 }
 function showNotice(h){$("notice").innerHTML=h;$("notice").classList.add("show")}
 function hideNotice(){$("notice").classList.remove("show")}
@@ -324,26 +362,31 @@ addEventListener("resize",()=>{if(document.body.dataset.view==="page")fitPage();
    duraklarını taşımıyor ve "DOSYA NO : ..." satırlarındaki iki nokta
    üst üsteler aynı kolona gelmiyor. Bu yüzden her sekmenin genişliğini
    ölçüp bir sonraki durağa tam denk gelecek şekilde veriyoruz. */
-const VARSAYILAN_DURAK=35.4;          // ~1,25 cm — UDF'nin varsayılanı
+/* Sekme yerleşimi.
+   Gerçek UYAP belgelerinde sekme, CDATA içinde düz \t karakteri olarak duruyor
+   ve hizalama tekdüze bir ızgarayla sağlanıyor: yazar kısa etiketten sonra üç,
+   uzun etiketten sonra bir sekme koyuyor, ikisi de aynı durağa varıyor.
+   Izgara masaüstü çıktısından ölçüldü: 72pt (1 inç) — altı başlık satırının
+   tamamı 216pt'ye düşüyor. Bunu CSS tab-size hallediyor, JS'e gerek yok.
+
+   Aşağıdaki kod yalnızca belgede AÇIK sekme durağı (UDF'de TabSet) tanımlıysa
+   devreye giriyor; o durumda sekme kendi ögesinde tutulup genişliği ölçülüyor. */
 function layoutTabs(){
   const zoom=(doc.zoom||100)/100;
-  sheet.querySelectorAll("p,li").forEach(el=>{
-    const tabs=el.querySelectorAll('[data-udf="tab"]');
+  sheet.querySelectorAll("p[data-tabs],li[data-tabs]").forEach(el=>{
+    const tabs=[...el.querySelectorAll('[data-udf="tab"]')];
     if(!tabs.length)return;
-    const stops=(el.dataset.tabs||"").split(" ").map(parseFloat).filter(v=>!isNaN(v));
+    const stops=el.dataset.tabs.split(" ").map(parseFloat).filter(v=>!isNaN(v));
+    if(!stops.length)return;
+    const cs=getComputedStyle(el), padL=parseFloat(cs.paddingLeft)||0;
     const base=el.getBoundingClientRect();
-    const cs=getComputedStyle(el);
-    const padL=parseFloat(cs.paddingLeft)||0;
     tabs.forEach(t=>{
-      t.style.display="inline-block";
-      t.style.width="0px";                       // önce sıfırla, sonra ölç
+      t.style.display="inline-block"; t.style.width="0px";
       const r=t.getBoundingClientRect();
-      // Ekran pikselinden belge punto'suna: zoom'u geri al, px->pt
-      const xpt=((r.left-base.left-padL)/zoom)*0.75;
-      let hedef=stops.find(v=>v>xpt+0.5);
-      if(hedef===undefined)                       // durak yoksa varsayılan ızgara
-        hedef=Math.ceil((xpt+0.5)/VARSAYILAN_DURAK)*VARSAYILAN_DURAK;
-      t.style.width=Math.max(2,hedef-xpt)+"pt";
+      const x=((r.left-base.left-padL)/zoom)*0.75;
+      const hedef=stops.find(v=>v>x+0.5);
+      if(hedef!==undefined)t.style.width=Math.max(2,hedef-x)+"pt";
+      else{ t.style.display=""; t.style.width="" }   // durak bitti: CSS ızgarasına bırak
     });
   });
 }
@@ -590,7 +633,7 @@ function yeniTab(){
   s.dataset.udf="tab"; s.textContent="\t";
   return s;
 }
-function insertTab(){ insertNode(yeniTab()); layoutTabs() }
+function insertTab(){ insertNode(document.createTextNode("\t")); layoutTabs() }
 sheet.addEventListener("keydown",e=>{
   if(e.key==="Tab"){
     // contentEditable'da Tab varsayilan olarak odagi degistirir; belgede
@@ -927,7 +970,7 @@ $("bSaveAs").onclick=()=>panel("Farklı kaydet",
 $("bOpen").onclick=$("bOpen2").onclick=()=>$("fUdf").click();
 $("fUdf").onchange=e=>{const f=e.target.files[0];if(f)openFile(f);e.target.value=""};
 $("bSave").onclick=()=>{if(doc.loaded)saveUdf()};
-const newDoc=()=>{hideNotice();doc.kaynakUri=null;doc.page={w:595.28,h:841.89,mt:56.7,mr:56.7,mb:56.7,ml:56.7,orient:1};
+const newDoc=()=>{hideNotice();doc.kaynakUri=null;doc.sayfaHam=null;doc.page={w:595.28,h:841.89,mt:56.7,mr:56.7,mb:56.7,ml:56.7,orient:1};
   load('<p style="text-align:justify"><br></p>',"isimsiz.UDF");sheet.focus()};
 $("bNew").onclick=newDoc;$("bNew2").onclick=newDoc;
 

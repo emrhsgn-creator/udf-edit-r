@@ -77,10 +77,14 @@ main{flex:1 1 auto;overflow:auto;-webkit-overflow-scrolling:touch;background:var
 body[data-view=write] .sheet{width:calc(100% - 16px);max-width:660px;
   min-height:var(--sh,900px);padding:16px 15px}
 body[data-view=page] .sheet{width:var(--pw);min-height:var(--ph);
-  padding:var(--mt) var(--mr) var(--mb) var(--ml)}
+  padding:var(--mt) var(--mr) var(--mb) var(--ml);
+  background-image:repeating-linear-gradient(to bottom,
+    transparent 0,transparent calc(var(--ph) - 1px),
+    #C9D6DE calc(var(--ph) - 1px),#C9D6DE var(--ph));
+  background-origin:border-box;background-repeat:repeat-y}
 .sheet p{margin:0;font:12pt/1.42 "Times New Roman",Times,serif;min-height:1.42em;
-  word-wrap:break-word;white-space:pre-wrap;tab-size:8;-moz-tab-size:8}
-.sheet li{font:12pt/1.42 "Times New Roman",Times,serif;white-space:pre-wrap;tab-size:8;-moz-tab-size:8}
+  word-wrap:break-word;white-space:pre-wrap;tab-size:72pt;-moz-tab-size:72pt}
+.sheet li{font:12pt/1.42 "Times New Roman",Times,serif;white-space:pre-wrap;tab-size:72pt;-moz-tab-size:72pt}
 .sheet ol,.sheet ul{margin:0;padding-left:28pt}
 .sheet table{border-collapse:collapse;margin:4pt 0;width:100%}
 .sheet td{border:.5px solid #000;padding:4px;vertical-align:top;min-width:24pt}
