@@ -81,12 +81,40 @@ tarafından üretilen küçük bir Java eklentisi (`YazdirPlugin`) üzerinden si
 `PrintManager` servisine veriliyor. Açılan yazdırma ekranındaki "PDF olarak kaydet"
 seçeneği dosyayı cihaza yazar.
 
+## Sadakat
+
+Gerçek bir UYAP dilekçesi (96 paragraf) editörden geçirilip orijinaliyle
+karşılaştırıldı. Korunanlar:
+
+| Özellik | Durum |
+|---|---|
+| Metin (20.961 karakter) | birebir |
+| Biçim (karakter bazında kalın/eğik/altı çizili/punto/yazı tipi) | 23.995 karakterde 0 fark |
+| Paragraf hizalaması ve aralıkları | birebir |
+| Sekmeler | 16/16 |
+| Sayfa düzeni (kenar boşlukları, yön) | birebir |
+
+Bilinen farklar:
+
+- **Metin parçaları bölünüyor** (194 → 292 run). Codec sekmeleri ayrı parça
+  yazdığı için oluşuyor; biçim ve metin etkilenmiyor, yalnızca dosya biraz büyüyor.
+- **Sondaki boş paragraf** düşüyor (1 karakter).
+- **`sign.sgn` taşınmıyor.** Bu kasıtlı: düzenlenen belgede imza zaten
+  geçersizdir, geçersiz imzayı dosyada tutmak yanıltıcı olur.
+
 ## Sınamalar
 
-`npm test` iki takım çalıştırır: `test-codec.mjs` codec'i tarayıcı ortamını taklit
-ederek (Buffer global değilken) sınar, `test-editor.mjs` ise editörü jsdom içinde
-ayağa kaldırıp "hiçbir düğmeye basmadan doğrudan yaz ve kaydet" akışını dener.
-Geçmişteki hataların çoğu tam olarak bu iki noktadaydı.
+`npm test` üç takım çalıştırır:
+
+- `test-codec.mjs` — codec'i tarayıcı ortamını taklit ederek (Buffer global
+  değilken) sınar.
+- `test-editor.mjs` — editörü jsdom içinde ayağa kaldırıp "hiçbir düğmeye
+  basmadan doğrudan yaz ve kaydet" akışını dener.
+- `test-fidelity.mjs` — `scripts/ornek/dilekce.udf` belgesini editörden geçirip
+  metni, karakter bazında biçimi, paragraf özniteliklerini ve sayfa düzenini
+  orijinaliyle karşılaştırır. Örnek belge kişisel veri içermez.
+
+Geçmişteki hataların çoğu tam olarak bu noktalardaydı.
 
 ## Bilinen sınırlar
 

@@ -8,18 +8,20 @@
     "android:prepare": "npm run build && cap add android || true && node scripts/patch-android.mjs && cap sync android",
     "android:build": "npm run android:prepare && cd android && ./gradlew assembleDebug",
     "build": "node src/build.mjs",
-    "test": "npm run build && node scripts/test-codec.mjs && node scripts/test-editor.mjs"
+    "test": "npm run build && node scripts/test-codec.mjs && node scripts/test-editor.mjs && node scripts/test-fidelity.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.0.0",
     "@capacitor/app": "^8.0.0",
     "@capacitor/core": "^8.0.0",
     "@capacitor/filesystem": "^8.0.0",
-    "@capacitor/share": "^8.0.0"
+    "@capacitor/share": "^8.0.0",
+    "jszip": "^3.10.1"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.0.0",
-    "jsdom": "^30.0.1"
+    "jsdom": "^30.0.1",
+    "jszip": "^3.10.1"
   },
   "engines": {
     "node": ">=22.0.0"
