@@ -132,5 +132,42 @@ ok(sheet.style.getPropertyValue("--ph") === "595.28pt", "yatay sayfada yüksekli
 ok(sheet.style.getPropertyValue("--pw") === "841.89pt", "yatay sayfada genişlik dönüyor");
 w.doc.page.orient = 1; w.applyPage();
 
+// --- 13. Sekme durakları -------------------------------------------
+// Belgenin kendi durakları yok sayılırsa "DOSYA NO : ..." satırlarındaki
+// iki nokta üst üsteler aynı kolona gelmiyordu.
+sheet.innerHTML = w.udfHtmlToEditor(
+  '<p style="tab-stops:56.7pt 141.75pt">DOSYA NO<tab/>: 2024/200</p>' +
+  '<p style="tab-stops:56.7pt 141.75pt">VEKİLİ<tab/>: Av. A</p>');
+const tp1 = sheet.children[0], tp2 = sheet.children[1];
+ok(tp1.dataset.tabs === "56.7 141.75", "duraklar okundu: " + tp1.dataset.tabs);
+ok(tp1.style.getPropertyValue("tab-stops") === "", "tab-stops stilden temizlendi");
+ok(tp1.querySelectorAll('[data-udf="tab"]').length === 1, "sekme ögesi oluştu");
+ok(tp2.dataset.tabs === "56.7 141.75", "ikinci satırda da duraklar var");
+
+const geri = w.editorToUdfHtml();
+ok(/tab-stops:56\.7pt 141\.75pt/.test(geri), "duraklar kaydedilirken geri yazılıyor");
+ok((geri.match(/<tab\/>/g) || []).length === 2, "iki sekme yazıldı");
+ok(/DOSYA NO/.test(geri) && /2024\/200/.test(geri), "sekmeli satır içeriği tam");
+ok(typeof w.layoutTabs === "function", "sekme yerleşimi tanımlı");
+
+// --- 14. <tab/> ve <page-break/> içerik yutmuyor ---------------------
+// Bunlar HTML'de kendi kendine kapanan etiket DEĞİL; tarayıcı arkalarındaki
+// içeriği içlerine alıyor. Öge körlemesine değiştirilirse o içerik yok olur:
+// sekmeden sonraki metin ve sayfa sonundan sonraki TÜM paragraflar giderdi.
+sheet.innerHTML = w.udfHtmlToEditor(
+  '<p>DOSYA NO<tab/>: 2024/200 Esas</p>' +
+  '<p>VEKİLİ<tab/>: Av. Emrah<tab/>ek</p>');
+let cikti = w.editorToUdfHtml();
+ok(/2024\/200 Esas/.test(cikti), "sekmeden sonraki metin korunuyor");
+ok(/Av\. Emrah/.test(cikti) && /ek/.test(cikti), "iki sekmeli satır tam");
+
+sheet.innerHTML = w.udfHtmlToEditor(
+  '<p>Birinci sayfa</p><page-break/><p>İkinci sayfa</p><p>Üçüncü paragraf</p>');
+cikti = w.editorToUdfHtml();
+ok(/Birinci sayfa/.test(cikti), "sayfa sonu öncesi korunuyor");
+ok(/İkinci sayfa/.test(cikti), "sayfa sonu sonrası korunuyor");
+ok(/Üçüncü paragraf/.test(cikti), "sayfa sonundan sonraki tüm paragraflar korunuyor");
+ok(/<page-break\/>/.test(cikti), "sayfa sonu geri yazılıyor");
+
 if (fail) { console.error(`\n${fail} sınama başarısız.`); process.exit(1); }
 console.log("\nTüm sınamalar geçti.");
