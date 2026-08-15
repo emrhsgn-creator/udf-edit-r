@@ -110,7 +110,7 @@ Bilinen farklar:
   değilken) sınar.
 - `test-editor.mjs` — editörü jsdom içinde ayağa kaldırıp "hiçbir düğmeye
   basmadan doğrudan yaz ve kaydet" akışını dener.
-- `test-fidelity.mjs` — `scripts/ornek/dilekce.udf` belgesini editörden geçirip
+- `test-fidelity.mjs` — `scripts/ornek-dilekce.udf` belgesini editörden geçirip
   metni, karakter bazında biçimi, paragraf özniteliklerini ve sayfa düzenini
   orijinaliyle karşılaştırır. Örnek belge kişisel veri içermez.
 
