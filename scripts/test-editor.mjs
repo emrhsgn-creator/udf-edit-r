@@ -95,5 +95,29 @@ ok(Math.abs(parseFloat(hedef.style.marginLeft) - 56.69) < 0.3, "asılı girinti 
 ok(parseFloat(hedef.style.textIndent) < 0, "asılı girinti ilk satırı sola taşıyor");
 ok(!d.getElementById("dlg").classList.contains("on"), "Tamam pencereyi kapatıyor");
 
+// --- 9. Gerçek sekme karakteri --------------------------------------
+sheet.innerHTML = '<p>DAVACI\t: EMRAH</p><p>VEKİLİ\t: EMRAH</p>';
+const tabOut = w.editorToUdfHtml();
+ok((tabOut.match(/<tab\/>/g) || []).length === 2, "her satırda sekme yazılıyor");
+ok(/DAVACI/.test(tabOut) && /VEKİLİ/.test(tabOut), "sekmeli satırlar korunuyor");
+ok((tabOut.match(/EMRAH/g) || []).length === 2, "sekme sonrası metin kaybolmuyor");
+
+// --- 10. Çok satırlı belge tam kaydediliyor mu? ----------------------
+sheet.innerHTML =
+  '<p style="text-align:center"><span style="font-size:24pt">BAŞLIK</span></p>' +
+  '<p>DAVACI\t: A</p><p><strong><u>VEKİLİ\t: B</u></strong></p>' +
+  '<p>DAVALI\t: C</p><p>VEKİLİ\t: D<br></p>';
+const coklu = w.editorToUdfHtml();
+ok((coklu.match(/<p[ >]/g) || []).length === 5, "beş paragrafın hepsi yazılıyor");
+["BAŞLIK","A","B","C","D"].forEach(function (t) {
+  ok(new RegExp(">" + t + "<|" + t + "<").test(coklu), "içerik korunuyor: " + t);
+});
+
+// --- 11. Kaydetme doğrulaması bağlı mı? -----------------------------
+// (Gerçek round-trip test-codec.mjs'de; jsdom'da Blob API'si eksik.)
+ok(typeof w.udfUret === "function", "kaydetme doğrulaması tanımlı");
+// Boşluklar bilerek yok sayılıyor: codec onları normalleştirebiliyor.
+ok(w.sadeMetin("<p>A<tab/>B</p>") === "AB", "metin karşılaştırıcı çalışıyor");
+
 if (fail) { console.error(`\n${fail} sınama başarısız.`); process.exit(1); }
 console.log("\nTüm sınamalar geçti.");
