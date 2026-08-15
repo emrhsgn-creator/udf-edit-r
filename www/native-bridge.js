@@ -78,7 +78,17 @@
   async function kaydet(ad, hepYeniYer) {
     var isim = String(ad || doc.name || "belge")
       .replace(/\.udf$/i, "").replace(/[\/\\:*?"<>|]/g, "_") + ".udf";
-    var veri = await blobToB64(await window.UDF.toUdf(editorToUdfHtml()));
+    // Kaydetmeden önce doğrula: üretilen dosya editördeki metnin tamamını
+    // içermiyorsa sessizce eksik kaydetmek yerine durup uyarıyoruz.
+    var r = await window.udfUret();
+    if (!r.ok) {
+      bildir('<span class="mk">!</span><span><b>Belge eksik kaydedilecekti, ' +
+        'kaydetme durduruldu.</b><br>Editörde ' + r.beklenen + ' karakter var, ' +
+        'dosyaya ' + r.gelen + ' karakter yazılıyor. Lütfen bu ekranın ' +
+        'görüntüsünü geliştiriciye iletin.</span>');
+      return;
+    }
+    var veri = await blobToB64(r.blob);
 
     if (!Dosya) {
       bildir('<span class="mk">!</span><span>Kaydetme bileşeni bulunamadı. ' +
