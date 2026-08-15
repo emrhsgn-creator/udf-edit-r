@@ -257,13 +257,25 @@ function stats(){
 function showNotice(h){$("notice").innerHTML=h;$("notice").classList.add("show")}
 function hideNotice(){$("notice").classList.remove("show")}
 
+/* Kağıt her zaman tam sayfa görünsün. Boş belgede içeriğe göre büzülüyordu;
+   masaüstü editöründe sayfa hep A4 yüksekliğinde duruyor. Yazı görünümünde
+   kağıt A4 oranında (1:1,414), sayfa görünümünde gerçek A4 ölçüsünde. */
+const A4_ORAN=841.89/595.28;
+function fitSheet(){
+  if(document.body.dataset.view==="write"){
+    const w=sheet.clientWidth||660;
+    document.documentElement.style.setProperty("--sh",Math.round(w*A4_ORAN)+"px");
+  }
+}
 function applyPage(){
   const p=doc.page,land=p.orient===0;
   sheet.style.setProperty("--pw",(land?p.h:p.w)+"pt");
+  sheet.style.setProperty("--ph",(land?p.w:p.h)+"pt");
   sheet.style.setProperty("--mt",p.mt+"pt");sheet.style.setProperty("--mr",p.mr+"pt");
   sheet.style.setProperty("--mb",p.mb+"pt");sheet.style.setProperty("--ml",p.ml+"pt");
   $("stPaper").textContent=(land?"A4 Yatay":"A4 Kâğıt");
   applyZoom();
+  fitSheet();
 }
 function applyZoom(){
   document.documentElement.style.setProperty("--zoom",(doc.zoom/100).toFixed(2));
@@ -276,7 +288,7 @@ function fitPage(){
 $("zoomR").oninput=e=>{doc.zoom=+e.target.value;applyZoom()};
 $("bZoomIn").onclick=()=>{doc.zoom=Math.min(200,doc.zoom+10);applyZoom()};
 $("bZoomOut").onclick=()=>{doc.zoom=Math.max(50,doc.zoom-10);applyZoom()};
-addEventListener("resize",()=>{if(document.body.dataset.view==="page")fitPage()});
+addEventListener("resize",()=>{if(document.body.dataset.view==="page")fitPage();fitSheet()});
 
 /* ================= SEÇİM ================= */
 function curBlock(sel){const s=getSelection();if(!s.rangeCount)return null;
@@ -823,7 +835,8 @@ $("bSelInfo").onclick=()=>{const s=String(getSelection());
 $("bView").onclick=()=>{const w=document.body.dataset.view==="write";
   document.body.dataset.view=w?"page":"write";
   $("bView").classList.toggle("on",w);
-  if(w)fitPage();else{doc.zoom=125;applyZoom()}};
+  if(w)fitPage();else{doc.zoom=125;applyZoom()}
+  fitSheet();};
 /* PDF çıktısı. Android WebView'da window.print() sessizce hiçbir şey yapmaz;
    uygulama içinde native-bridge bu fonksiyonun üzerine yazıp sistemin
    yazdırma servisini çağırıyor ("PDF olarak kaydet" oradan çıkıyor). */
@@ -866,5 +879,7 @@ addEventListener("beforeunload",e=>{if(doc.dirty){e.preventDefault();e.returnVal
 window.editorToUdfHtml=editorToUdfHtml;
 window.udfHtmlToEditor=udfHtmlToEditor;
 window.doc=doc;
+window.fitSheet=fitSheet;
+window.applyPage=applyPage;
 
-loadRecent();applyZoom();
+loadRecent();applyZoom();fitSheet();

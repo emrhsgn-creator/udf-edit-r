@@ -74,8 +74,10 @@ main{flex:1 1 auto;overflow:auto;-webkit-overflow-scrolling:touch;background:var
 .empty[hidden],.wrap[hidden]{display:none!important}
 .sheet{background:#fff;color:#000;zoom:var(--zoom);border:1px solid var(--page-edge);outline:none;
   font:12pt/1.42 "Times New Roman",Times,serif}
-body[data-view=write] .sheet{width:calc(100% - 16px);max-width:660px;padding:16px 15px}
-body[data-view=page] .sheet{width:var(--pw);padding:var(--mt) var(--mr) var(--mb) var(--ml)}
+body[data-view=write] .sheet{width:calc(100% - 16px);max-width:660px;
+  min-height:var(--sh,900px);padding:16px 15px}
+body[data-view=page] .sheet{width:var(--pw);min-height:var(--ph);
+  padding:var(--mt) var(--mr) var(--mb) var(--ml)}
 .sheet p{margin:0;font:12pt/1.42 "Times New Roman",Times,serif;min-height:1.42em;
   word-wrap:break-word;white-space:pre-wrap;tab-size:8;-moz-tab-size:8}
 .sheet li{font:12pt/1.42 "Times New Roman",Times,serif;white-space:pre-wrap;tab-size:8;-moz-tab-size:8}
