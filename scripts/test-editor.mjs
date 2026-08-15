@@ -119,5 +119,18 @@ ok(typeof w.udfUret === "function", "kaydetme doğrulaması tanımlı");
 // Boşluklar bilerek yok sayılıyor: codec onları normalleştirebiliyor.
 ok(w.sadeMetin("<p>A<tab/>B</p>") === "AB", "metin karşılaştırıcı çalışıyor");
 
+// --- 12. Boş belgede kağıt tam sayfa mı? ----------------------------
+w.load('<p><br></p>', "isimsiz.UDF");
+const shVar = d.documentElement.style.getPropertyValue("--sh");
+ok(shVar !== "", "yazı görünümünde sayfa yüksekliği hesaplanıyor");
+ok(parseInt(shVar) > 300, "boş belgede kağıt büzülmüyor: " + shVar);
+const phVar = sheet.style.getPropertyValue("--ph");
+ok(phVar === "841.89pt", "sayfa görünümünde A4 yüksekliği: " + phVar);
+// yatay sayfada yükseklik/genişlik yer değiştirmeli
+w.doc.page.orient = 0; w.applyPage();
+ok(sheet.style.getPropertyValue("--ph") === "595.28pt", "yatay sayfada yükseklik dönüyor");
+ok(sheet.style.getPropertyValue("--pw") === "841.89pt", "yatay sayfada genişlik dönüyor");
+w.doc.page.orient = 1; w.applyPage();
+
 if (fail) { console.error(`\n${fail} sınama başarısız.`); process.exit(1); }
 console.log("\nTüm sınamalar geçti.");
