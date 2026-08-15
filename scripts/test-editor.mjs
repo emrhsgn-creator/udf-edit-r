@@ -98,7 +98,7 @@ ok(!d.getElementById("dlg").classList.contains("on"), "Tamam pencereyi kapatıyo
 // --- 9. Gerçek sekme karakteri --------------------------------------
 sheet.innerHTML = '<p>DAVACI\t: EMRAH</p><p>VEKİLİ\t: EMRAH</p>';
 const tabOut = w.editorToUdfHtml();
-ok((tabOut.match(/<tab\/>/g) || []).length === 2, "her satırda sekme yazılıyor");
+ok((tabOut.match(/\t/g) || []).length === 2, "her satırda sekme yazılıyor");
 ok(/DAVACI/.test(tabOut) && /VEKİLİ/.test(tabOut), "sekmeli satırlar korunuyor");
 ok((tabOut.match(/EMRAH/g) || []).length === 2, "sekme sonrası metin kaybolmuyor");
 
@@ -168,6 +168,23 @@ ok(/Birinci sayfa/.test(cikti), "sayfa sonu öncesi korunuyor");
 ok(/İkinci sayfa/.test(cikti), "sayfa sonu sonrası korunuyor");
 ok(/Üçüncü paragraf/.test(cikti), "sayfa sonundan sonraki tüm paragraflar korunuyor");
 ok(/<page-break\/>/.test(cikti), "sayfa sonu geri yazılıyor");
+
+// --- 15. Sekme ızgarası ------------------------------------------
+// Gerçek belgelerde sekme düz \t karakteri; hizalama tekdüze ızgarayla
+// sağlanıyor (kısa etiketten sonra üç, uzundan sonra bir sekme).
+// Izgara masaüstü çıktısından ölçüldü: 72pt = 1 inç.
+const kural = [...d.styleSheets[0].cssRules].find(r =>
+  r.selectorText && r.selectorText.includes(".sheet p"));
+ok(/72pt/.test(kural.style.cssText || kural.cssText), "sekme ızgarası 72pt");
+
+sheet.innerHTML = w.udfHtmlToEditor(
+  "<p><strong>DOSYA NO\t\t\t: </strong>2024/200</p>" +
+  "<p><strong>DAVACI - KARŞI DAVALI\t: </strong>Test</p>");
+const sekmeli = w.editorToUdfHtml();
+ok((sekmeli.match(/\t/g) || []).length === 4, "sekme sayısı korunuyor (3+1)");
+ok(!/<tab\/>/.test(sekmeli), "sekmeler düz karakter olarak yazılıyor");
+ok(/DOSYA NO/.test(sekmeli) && /2024\/200/.test(sekmeli), "sekmeli satır tam");
+
 
 if (fail) { console.error(`\n${fail} sınama başarısız.`); process.exit(1); }
 console.log("\nTüm sınamalar geçti.");
