@@ -6,7 +6,7 @@ import { JSDOM } from "jsdom";
 import { readFileSync, existsSync } from "node:fs";
 import JSZip from "jszip";
 
-const ORNEK = new URL("./ornek/dilekce.udf", import.meta.url);
+const ORNEK = new URL("./ornek-dilekce.udf", import.meta.url);
 if (!existsSync(ORNEK)) {
   console.log("  -- örnek belge yok, sadakat sınaması atlandı");
   process.exit(0);
