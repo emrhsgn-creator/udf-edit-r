@@ -87,7 +87,8 @@ body[data-view=page] .sheet{width:var(--pw);min-height:var(--ph);
 .sheet td[data-nb="1"]{border:.5px dashed #D8D8D8!important}
 .sheet td.sel{outline:2px solid var(--blue);outline-offset:-2px}
 .sheet img{max-width:100%}
-.sheet [data-udf=tab]{white-space:pre}
+.sheet [data-udf=tab]{white-space:pre;display:inline-block;vertical-align:baseline}
+.sheet.marks [data-udf=tab]{background:#EAF1F7}
 .sheet [data-udf=pagebreak]{display:block;text-align:center;font:9pt var(--ui);color:#9AA;
   border-top:1px dashed #BBB;border-bottom:1px dashed #BBB;margin:8pt 0;padding:2pt;user-select:none}
 

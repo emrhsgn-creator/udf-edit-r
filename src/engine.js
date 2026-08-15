@@ -22,12 +22,38 @@ const store={
 /* ================= UDF <-> EDİTÖR ================= */
 function udfHtmlToEditor(html){
   const d=document.createElement("div"); d.innerHTML=html;
-  // Sekme gerçek bir \t karakteri olarak tutuluyor. Önceden 4 sabit boşlukla
-  // taklit ediliyordu; o yüzden satırlar birbirine hizalanmıyordu.
-  d.querySelectorAll("tab").forEach(t=>t.replaceWith(document.createTextNode("\t")));
-  d.querySelectorAll('[data-udf="tab"]').forEach(t=>t.replaceWith(document.createTextNode("\t")));
-  d.querySelectorAll("page-break").forEach(t=>{const s=document.createElement("div");
-    s.dataset.udf="pagebreak"; s.contentEditable="false"; s.textContent="— Sayfa sonu —"; t.replaceWith(s)});
+  // Sekme, genişliği ölçülebilsin diye kendi ögesinde tutuluyor; içindeki
+  // gerçek \t, durak bilgisi yoksa yedek olarak çalışır.
+  // DİKKAT: <tab/> ve <page-break/> HTML'de kendi kendine kapanan etiket
+  // DEĞİL. Tarayıcı bunları açık etiket sayar ve ARKASINDAKİ içeriği onların
+  // içine alır. Öge doğrudan değiştirilirse o içerik sessizce yok olur —
+  // sekmeden sonraki metin, sayfa sonundan sonraki tüm paragraflar gider.
+  // Bu yüzden çocukları ögenin yerine geri koyuyoruz.
+  const yerineKoy=(t,yeni)=>{
+    const frag=document.createDocumentFragment();
+    while(t.firstChild)frag.appendChild(t.firstChild);
+    t.replaceWith(yeni);
+    yeni.after(frag);
+  };
+  d.querySelectorAll("tab").forEach(t=>yerineKoy(t,yeniTab()));
+  // Belge kendi sekme duraklarını taşıyor (UDF'de TabSet). Bunlar yok sayılırsa
+  // "DOSYA NO : ..." gibi satırlardaki iki nokta üst üsteler aynı kolona gelmez.
+  d.querySelectorAll("p,li").forEach(el=>{
+    // tab-stops geçerli bir CSS özelliği olmadığı için tarayıcı onu style
+    // nesnesine almıyor; ham öznitelikten okumak gerekiyor.
+    const raw=el.getAttribute("style")||"";
+    const m=raw.match(/tab-stops\s*:\s*([^;]+)/i);
+    if(m){
+      const arr=m[1].split(/[\s,]+/).map(parseFloat).filter(v=>!isNaN(v));
+      if(arr.length)el.dataset.tabs=arr.join(" ");
+      el.setAttribute("style",raw.replace(/tab-stops\s*:[^;]*;?/i,""));
+    }
+  });
+  d.querySelectorAll("page-break").forEach(t=>{
+    const s=document.createElement("div");
+    s.dataset.udf="pagebreak"; s.contentEditable="false"; s.textContent="— Sayfa sonu —";
+    yerineKoy(t,s);
+  });
   // Codec kenarlıksız hücreyi "border yok" diye ifade ediyor; açıkça işaretlemezsek
   // editör varsayılan çerçeveyi çizer ve kaydederken bu durum kaybolur.
   d.querySelectorAll("td").forEach(td=>{
@@ -125,6 +151,7 @@ function paraStyle(p){
   ["textIndent","marginLeft","marginRight","marginTop","marginBottom"].forEach(k=>{
     const v=parseFloat(s[k]);
     if(v)o.push(k.replace(/[A-Z]/g,m=>"-"+m.toLowerCase())+":"+v+"pt")});
+  if(p.dataset&&p.dataset.tabs)o.push("tab-stops:"+p.dataset.tabs.split(" ").map(v=>v+"pt").join(" "));
   return o.length?` style="${o.join(";")}"`:"";
 }
 
@@ -220,7 +247,7 @@ function load(html,name){
   doc.name=name;doc.loaded=true;sheet.innerHTML=html;
   $("empty").hidden=true;$("wrap").hidden=false;
   $("fname").textContent="Doküman Editörü — "+name;
-  applyPage();setDirty(false);stats();saveRecent();
+  applyPage();setDirty(false);stats();saveRecent();layoutTabs();
 }
 async function saveUdf(asName){
   const name=String(asName||doc.name).replace(/\.udf$/i,"")+".udf";
@@ -280,6 +307,7 @@ function applyPage(){
 function applyZoom(){
   document.documentElement.style.setProperty("--zoom",(doc.zoom/100).toFixed(2));
   $("stZoom").textContent="%"+doc.zoom;$("zoomR").value=doc.zoom;
+  layoutTabsGec();
 }
 function fitPage(){
   const land=doc.page.orient===0,w=(land?doc.page.h:doc.page.w)*(96/72);
@@ -289,6 +317,40 @@ $("zoomR").oninput=e=>{doc.zoom=+e.target.value;applyZoom()};
 $("bZoomIn").onclick=()=>{doc.zoom=Math.min(200,doc.zoom+10);applyZoom()};
 $("bZoomOut").onclick=()=>{doc.zoom=Math.max(50,doc.zoom-10);applyZoom()};
 addEventListener("resize",()=>{if(document.body.dataset.view==="page")fitPage();fitSheet()});
+
+
+/* ---- Sekme duraklarını uygula ----
+   CSS'te keyfi sekme durağı yok; tekdüze tab-size ise belgenin kendi
+   duraklarını taşımıyor ve "DOSYA NO : ..." satırlarındaki iki nokta
+   üst üsteler aynı kolona gelmiyor. Bu yüzden her sekmenin genişliğini
+   ölçüp bir sonraki durağa tam denk gelecek şekilde veriyoruz. */
+const VARSAYILAN_DURAK=35.4;          // ~1,25 cm — UDF'nin varsayılanı
+function layoutTabs(){
+  const zoom=(doc.zoom||100)/100;
+  sheet.querySelectorAll("p,li").forEach(el=>{
+    const tabs=el.querySelectorAll('[data-udf="tab"]');
+    if(!tabs.length)return;
+    const stops=(el.dataset.tabs||"").split(" ").map(parseFloat).filter(v=>!isNaN(v));
+    const base=el.getBoundingClientRect();
+    const cs=getComputedStyle(el);
+    const padL=parseFloat(cs.paddingLeft)||0;
+    tabs.forEach(t=>{
+      t.style.display="inline-block";
+      t.style.width="0px";                       // önce sıfırla, sonra ölç
+      const r=t.getBoundingClientRect();
+      // Ekran pikselinden belge punto'suna: zoom'u geri al, px->pt
+      const xpt=((r.left-base.left-padL)/zoom)*0.75;
+      let hedef=stops.find(v=>v>xpt+0.5);
+      if(hedef===undefined)                       // durak yoksa varsayılan ızgara
+        hedef=Math.ceil((xpt+0.5)/VARSAYILAN_DURAK)*VARSAYILAN_DURAK;
+      t.style.width=Math.max(2,hedef-xpt)+"pt";
+    });
+  });
+}
+window.layoutTabs=layoutTabs;
+
+let tabZaman;
+function layoutTabsGec(){ clearTimeout(tabZaman); tabZaman=setTimeout(layoutTabs,60) }
 
 /* ================= SEÇİM ================= */
 function curBlock(sel){const s=getSelection();if(!s.rangeCount)return null;
@@ -508,7 +570,7 @@ function sync(){
 document.addEventListener("selectionchange",()=>{if(document.activeElement===sheet)sync()});
 
 let tId;
-function touch(){setDirty(true);clearTimeout(tId);tId=setTimeout(()=>{stats();saveRecent()},600)}
+function touch(){setDirty(true);layoutTabsGec();clearTimeout(tId);tId=setTimeout(()=>{stats();saveRecent()},600)}
 
 sheet.addEventListener("input",()=>{
   // DİKKAT: burada DOM'u yeniden yazmıyoruz. Önceki sürümde her tuş vuruşunda
@@ -523,7 +585,12 @@ sheet.addEventListener("paste",e=>{e.preventDefault();
 
 
 /* ---- klavye: Tab sekme eklesin, odak degistirmesin ---- */
-function insertTab(){ insertNode(document.createTextNode("\t")) }
+function yeniTab(){
+  const s=document.createElement("span");
+  s.dataset.udf="tab"; s.textContent="\t";
+  return s;
+}
+function insertTab(){ insertNode(yeniTab()); layoutTabs() }
 sheet.addEventListener("keydown",e=>{
   if(e.key==="Tab"){
     // contentEditable'da Tab varsayilan olarak odagi degistirir; belgede
@@ -882,4 +949,4 @@ window.doc=doc;
 window.fitSheet=fitSheet;
 window.applyPage=applyPage;
 
-loadRecent();applyZoom();fitSheet();
+loadRecent();applyZoom();fitSheet();layoutTabs();
