@@ -29,6 +29,8 @@ jobs:
 
       - name: Bağımlılıkları kur
         run: npm install
+      - name: Codec sınaması
+        run: npm test
 
       - name: Arayüzü derle
         run: npm run build
