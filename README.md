@@ -24,6 +24,26 @@ Android Studio kurmanıza gerek yok; derlemeyi GitHub yapar.
 > İlk açılışta Actions "Workflows aren't running" derse, sekmedeki
 > **I understand my workflows, go ahead and enable them** düğmesine basın.
 
+## Web sürümü (iPhone / iPad / her tarayıcı)
+
+Depoda `.github/workflows/pages.yml` var; `main` dalına her gönderimde
+arayüzü derleyip GitHub Pages'e yayınlar. Açmak için: depoda
+**Settings → Pages → Source: GitHub Actions** seçin. Adres
+`https://<kullanıcı>.github.io/<depo>/` olur.
+
+Uygulama gibi kullanmak için:
+
+- **iPhone / iPad:** Safari'de adresi açın → Paylaş → **Ana Ekrana Ekle**.
+  Adres çubuğu olmadan, kendi simgesiyle açılır.
+- **Android:** Chrome'da → menü → **Uygulamayı yükle**.
+
+Servis çalışanı sayesinde ilk açılıştan sonra **internetsiz** çalışır.
+Kaydetme, destekleyen cihazlarda paylaşım sayfası üzerinden yapılır
+(iOS'ta "Dosyalara Kaydet"); desteklenmiyorsa normal indirme olur.
+
+iOS'ta ayrı bir uygulama derlemek için Mac, Xcode ve Apple Developer
+hesabı gerekir; web sürümü bu gereksinimlerin hiçbirini istemez.
+
 ## Kendi bilgisayarınızda derlemek
 
 **Node.js 22 veya üstü** gerekir — Capacitor 8 bunu şart koşuyor ve daha eski
