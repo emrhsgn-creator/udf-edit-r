@@ -273,11 +273,28 @@ async function saveUdf(asName){
   const r=await udfUret();
   if(!r.ok){ kayipUyar(r); return }
   const blob=r.blob;
+
+  /* iOS'ta ana ekrana eklenmiş uygulamada indirme bağlantısı çalışmıyor;
+     paylaşım sayfası "Dosyalara Kaydet" seçeneğini veriyor. Desteklenmiyorsa
+     klasik indirmeye düşüyoruz. */
+  const dosya=new File([blob],name,{type:"application/octet-stream"});
+  if(navigator.canShare&&navigator.canShare({files:[dosya]})){
+    try{
+      await navigator.share({files:[dosya],title:name});
+      tamamla(name); return;
+    }catch(e){
+      if(e&&e.name==="AbortError")return;      // kullanıcı vazgeçti
+    }
+  }
   const a=document.createElement("a");
   a.href=URL.createObjectURL(blob);a.download=name;
   document.body.appendChild(a);a.click();a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href),4000);
-  doc.name=name;$("fname").textContent="Doküman Editörü — "+name;setDirty(false);saveRecent();
+  tamamla(name);
+}
+function tamamla(name){
+  doc.name=name;$("fname").textContent="Doküman Editörü — "+name;
+  setDirty(false);saveRecent();
 }
 async function saveRecent(){await store.set("recent:"+doc.name,{name:doc.name,html:sheet.innerHTML,at:Date.now(),page:doc.page})}
 async function loadRecent(){

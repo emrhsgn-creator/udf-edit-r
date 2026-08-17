@@ -3,6 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#EEEEEE">
+<!-- iOS ana ekrana eklendiğinde adres çubuğu olmadan açılsın -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="UDF Editör">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" href="icons/icon-192.png">
 <title>Doküman Editörü</title>
 <style>
 /* Renkler doğrudan UYAP Doküman Editörü v5.4.17 ekran görüntülerinden örneklendi. */
@@ -395,5 +404,13 @@ input[type=file]{display:none}
 <script>__UDF_BUNDLE__</script>
 <script>__ENGINE__</script>
 <script src="native-bridge.js"></script>
+<script>
+/* Çevrimdışı çalışabilmek için servis çalışanını kaydet. Uygulama içinde
+   (Capacitor) dosyalar zaten yerelde olduğu için gerek yok. */
+if ("serviceWorker" in navigator && location.protocol === "https:"
+    && !(window.Capacitor && Capacitor.isNativePlatform && Capacitor.isNativePlatform())) {
+  addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+}
+</script>
 </body>
 </html>
