@@ -221,86 +221,65 @@ public class Akis {
         return send(apdu);
     }
 
-    private static byte[] onEkle(int bayt, byte[] veri) {
-        byte[] b = new byte[veri.length + 1];
-        b[0] = (byte) bayt;
-        System.arraycopy(veri, 0, b, 1, veri.length);
-        return b;
-    }
-
     /* Kullanılan imza biçimi — çalışan kombinasyon bulununca doldurulur,
        rapora yazılıp belgelensin diye. */
     public String sonBicim = "";
 
     /* İmzayı kart atıyor; özel anahtar kartı hiç terk etmiyor.
 
-       Elenenler (hepsi cihazda denendi):
-         - Veri biçimi ve uzunluğu: 20 / 32 / 51 bayt, hepsi 6A80
-         - Algoritma göstergesinin 19 değeri: hepsi 6A80
-         - Anahtar etiketi 84/83, referans 01/81: hepsi 6A80
-         - INTERNAL AUTHENTICATE (A4 + 00 88): 6A87
-         - PSO: HASH: 6A86, kart desteklemiyor
-         - 256 baytlık blok: kart gönderme zincirlemesini onaylamıyor
+       Elenenler (hepsi cihazda denendi, hepsi 6A80):
+         - Veri uzunluğu 20 / 32 / 51 bayt
+         - Algoritma göstergesinin 19 değeri
+         - Anahtar etiketi 84/83, referans 01/81
+       Ayrıca: INTERNAL AUTHENTICATE 6A87, PSO: HASH 6A86, P2 = AC ve BC
+       6A86 (yani 9E 9A doğru parametre), 256 baytlık blok gönderilemiyor.
 
-       Kalan ipucu, INTERNAL AUTHENTICATE'in verdiği 6A87: "Lc, P1-P2 ile
-       tutarsız". Bu kart komut parametreleriyle veri alanı arasındaki
-       ilişkiye titiz — ve PSO'yu şimdiye kadar hep tek bir P2 değeriyle
-       (9A) denedik. ISO 7816-8 üç seçenek tanımlıyor:
-
-         9A  veri alanı imzalanacak veriyi taşır
-         AC  veri alanı dolgu göstergesi + veriyi taşır
-         BC  veri alanı hazır DSI'yi taşır
-
-       6A80 zaten tam olarak "veri alanı P1-P2'nin ima ettiğiyle uyuşmuyor"
-       demek. Üçünü de deniyoruz.
-
-       PIN bir kez doğrulandıktan sonra bu denemeler deneme hakkı tüketmiyor. */
+       Semantiği tahmin etmeyi bırakıp kısıtı ölçüyoruz: veri alanının
+       uzunluğunu tarayıp kartın hangisini kabul ettiğine bakıyoruz. 6A80
+       "veri alanı yanlış" demek; doğru uzunluk başka bir kod döndürecek.
+       Gönderilen veri anlamsız dolgu, çıkan imza kullanılmıyor — bu bir
+       ölçüm turu. PIN doğrulandıktan sonra hiçbir hak tüketilmiyor. */
     public byte[] imzala(int anahtarRef, byte[] digestInfo) throws Exception {
-        byte[] h32 = new byte[32];
-        System.arraycopy(digestInfo, digestInfo.length - 32, h32, 0, 32);
+        byte[] mse = {(byte) 0x84, 0x01, (byte) anahtarRef};
 
-        int[]    p2ler   = {0x9A, 0x9A, 0xAC, 0xAC, 0xAC, 0xAC, 0xBC, 0xBC};
-        byte[][] veriler = {h32, digestInfo,
-                            onEkle(0x00, h32), onEkle(0x01, h32), onEkle(0x02, h32),
-                            onEkle(0x01, digestInfo),
-                            h32, digestInfo};
-        String[] adlar   = {"9A/32", "9A/51", "AC/00+32", "AC/01+32", "AC/02+32",
-                            "AC/01+51", "BC/32", "BC/51"};
+        /* Deterministik dolgu; içeriğin anlamı yok, uzunluk ölçülüyor. */
+        byte[] havuz = new byte[255];
+        for (int i = 0; i < havuz.length; i++) havuz[i] = (byte) (i + 1);
 
-        byte[][] mseler   = {{(byte) 0x84, 0x01, (byte) anahtarRef},
-                             {(byte) 0x84, 0x01, (byte) anahtarRef, (byte) 0x80, 0x01, 0x02}};
-        String[] mseAdlar = {"yalın", "alg02"};
+        StringBuilder farkli = new StringBuilder();
+        int say6A80 = 0, denenen = 0;
 
-        StringBuilder ilginc = new StringBuilder();
-        int sikici = 0;
+        for (int n = 1; n <= 255; n++) {
+            if (n > 128 && (n % 8) != 0) continue;          // 128 üstünde seyrek tara
+            byte[] veri = new byte[n];
+            System.arraycopy(havuz, 0, veri, 0, n);
 
-        for (int m = 0; m < mseler.length; m++) {
-            for (int i = 0; i < p2ler.length; i++) {
-                R r;
-                try {
-                    if (!guvenlikOrtami(0xB6, mseler[m])) {
-                        ekle(ilginc, mseAdlar[m] + ": MSE reddedildi");
-                        break;
-                    }
-                    r = pso(p2ler[i], veriler[i]);
-                } catch (Exception e) {
-                    ekle(ilginc, mseAdlar[m] + " " + adlar[i] + ": " + e.getMessage());
-                    continue;
+            R r;
+            try {
+                if (!guvenlikOrtami(0xB6, mse)) {
+                    ekle(farkli, "MSE reddedildi (n=" + n + ")");
+                    break;
                 }
-                if (r.ok() && r.data.length > 0) {
-                    sonBicim = mseAdlar[m] + " + " + adlar[i];
-                    return r.data;
-                }
-                if (r.sw == 0x6982) throw new Exception(
-                        "Kart PIN doğrulamasını düşürdü (6982). Bulunanlar: " + ilginc);
-                if (r.sw == 0x6A80) sikici++;
-                else ekle(ilginc, mseAdlar[m] + " " + adlar[i] + ": " + r.swHex());
+                r = pso(0x9A, veri);
+            } catch (Exception e) {
+                ekle(farkli, n + ":hata");
+                continue;
             }
+            denenen++;
+
+            if (r.ok() && r.data.length > 0) {
+                ekle(farkli, n + ":KABUL(" + r.data.length + " bayt)");
+                continue;                                   // ölçüm turu, imza kullanılmıyor
+            }
+            if (r.sw == 0x6982) throw new Exception(
+                    "Kart PIN doğrulamasını düşürdü (6982) n=" + n + ". Bulunanlar: " + farkli);
+            if (r.sw == 0x6A80) say6A80++;
+            else ekle(farkli, n + ":" + r.swHex());
         }
 
-        throw new Exception("Kart hiçbir imza biçimini kabul etmedi. "
-                + "6A80 veren deneme: " + sikici
-                + ". Farklı davrananlar: " + (ilginc.length() > 0 ? ilginc : "hiçbiri"));
+        throw new Exception("Uzunluk taraması bitti. Denenen: " + denenen
+                + ", 6A80 veren: " + say6A80
+                + ". Farklı davrananlar: " + (farkli.length() > 0 ? farkli : "hiçbiri"));
     }
 
     private static void ekle(StringBuilder b, String s) {
