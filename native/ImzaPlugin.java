@@ -142,6 +142,11 @@ public class ImzaPlugin extends Plugin {
                     }
                     final int ref = anahtarRef;
 
+                    /* İmzadan önce dizine dönüyoruz: PrKDF okunduğu için o an
+                       seçili olan bir EF; kart komutu dosya bağlamında
+                       değerlendiriyor olabilir. */
+                    kart.selectAid(Pkcs15.AID_KISA);
+
                     byte[] sgn;
                     try {
                         sgn = Cms.uret(icerik, sertifika, new java.util.Date(),

@@ -193,16 +193,30 @@ public class Akis {
         return -1;
     }
 
-    /* İmzalanacak anahtarı seçer: 00 22 41 B6 <veri>. */
-    public boolean guvenlikOrtami(byte[] veri) throws Exception {
+    /* İmzalanacak anahtarı seçer: 00 22 41 <şablon> <veri>.
+       B6 = dijital imza, A4 = iç kimlik doğrulama. */
+    public boolean guvenlikOrtami(int sablon, byte[] veri) throws Exception {
         byte[] apdu = new byte[5 + veri.length];
         apdu[0] = 0x00;
         apdu[1] = 0x22;
         apdu[2] = 0x41;
-        apdu[3] = (byte) 0xB6;
+        apdu[3] = (byte) sablon;
         apdu[4] = (byte) veri.length;
         System.arraycopy(veri, 0, apdu, 5, veri.length);
         return send(apdu).ok();
+    }
+
+    /* INTERNAL AUTHENTICATE — PSO: CDS yerine bununla imzalatan kartlar var. */
+    private R icKimlik(byte[] veri) throws Exception {
+        byte[] apdu = new byte[6 + veri.length];
+        apdu[0] = 0x00;
+        apdu[1] = (byte) 0x88;
+        apdu[2] = 0x00;
+        apdu[3] = 0x00;
+        apdu[4] = (byte) veri.length;
+        System.arraycopy(veri, 0, apdu, 5, veri.length);
+        apdu[apdu.length - 1] = 0x00;
+        return send(apdu);
     }
 
     private R pso(byte[] veri, boolean le) throws Exception {
@@ -221,78 +235,76 @@ public class Akis {
        rapora yazılıp belgelensin diye. */
     public String sonBicim = "";
 
-    /* PSO: COMPUTE DIGITAL SIGNATURE. Asıl imza kartın içinde atılıyor;
-       özel anahtar kartı hiç terk etmiyor.
+    /* İmzayı kart atıyor; özel anahtar kartı hiç terk etmiyor.
 
-       Kartın hangi algoritma göstergesini beklediğini belgeleyen bir kaynak
-       yok ve MSE her değere 90 00 diyor — yani doğrulamayı PSO'ya bırakıyor.
-       Bu yüzden algoritma baytını tarıyoruz. 6A80 "veri alanı beğenilmedi"
-       demek; algoritma karta göre SHA-1'i işaret ediyorsa 20 bayt bekler ve
-       32 baytlık SHA-256 özetimizi reddeder. Hangi uzunluğu kabul ettiğini
-       görebilmek için 20 baytlık bir yoklama da gönderiyoruz — o kabul
-       edilirse imza olarak kullanılmıyor, yalnızca teşhis için.
+       Önceki tur her şeyi eledi: algoritma göstergesinin 19 değeri, üç ayrı
+       veri uzunluğu (20 / 32 / 51) — hepsi istisnasız 6A80. Yani sorun ne
+       veri biçiminde ne uzunlukta. Geriye komutun kendisi ve anahtarın
+       adreslenişi kalıyor:
 
-       PIN bir kez doğrulandıktan sonra bu denemeler deneme hakkı tüketmiyor.
-       Le zorunlu (Le'siz gönderim 6700 veriyor). */
+         - Anahtar referansı: PrKDF 1 diyor, ama özel anahtar referansını
+           yüksek bit kurulu (0x81) bekleyen kartlar yaygın. Etiket de 84
+           yerine 83 olabilir.
+         - Komut: PSO: CDS yerine INTERNAL AUTHENTICATE ile imzalatan
+           kartlar var; o zaman güvenlik ortamı da B6 yerine A4 şablonuyla
+           kurulur.
+
+       PIN bir kez doğrulandıktan sonra bu denemeler deneme hakkı tüketmiyor. */
     public byte[] imzala(int anahtarRef, byte[] digestInfo) throws Exception {
         byte[] h32 = new byte[32];
         System.arraycopy(digestInfo, digestInfo.length - 32, h32, 0, 32);
-        byte[] h20 = new byte[20];
-        System.arraycopy(h32, 0, h20, 0, 20);
 
-        byte[][] veriler = {h32, digestInfo, h20};
-        String[] veriAd  = {"32", "51", "20"};
+        byte[][] veriler = {h32, digestInfo};
+        String[] veriAd  = {"32", "51"};
 
-        int[] algler = {0x02, 0x10, 0x11, 0x12, 0x13, 0x14, 0x20, 0x21, 0x22,
-                        0x25, 0x30, 0x40, 0x41, 0x42, 0x44, 0x45, 0x46, 0x00};
+        int[] sablonlar = {0xB6, 0xA4};
+        int[] etiketler = {0x84, 0x83};
+        int[] refler    = {anahtarRef, anahtarRef | 0x80};
 
         StringBuilder ilginc = new StringBuilder();
         int sikici = 0;
 
-        for (int a = -1; a < algler.length; a++) {
-            byte[] mse;
-            String mseAd;
-            if (a < 0) {                                  // algoritma belirtmeden
-                mse = new byte[]{(byte) 0x84, 0x01, (byte) anahtarRef};
-                mseAd = "yalın";
-            } else {
-                mse = new byte[]{(byte) 0x84, 0x01, (byte) anahtarRef,
-                                 (byte) 0x80, 0x01, (byte) algler[a]};
-                mseAd = String.format("%02X", algler[a]);
-            }
+        for (int sab : sablonlar) {
+            for (int etiket : etiketler) {
+                for (int ref : refler) {
+                    String ad = String.format("%02X/%02X/%02X", sab, etiket, ref);
+                    byte[] mse = {(byte) etiket, 0x01, (byte) ref};
 
-            StringBuilder satir = new StringBuilder();
-            boolean hepsiAyni = true;
-            for (int v = 0; v < veriler.length; v++) {
-                R r;
-                try {
-                    if (!guvenlikOrtami(mse)) { satir.append("MSE-red "); hepsiAyni = false; break; }
-                    r = pso(veriler[v], true);
-                } catch (Exception e) {
-                    satir.append(veriAd[v]).append(":hata ");
-                    hepsiAyni = false;
-                    continue;
-                }
-                if (r.ok() && r.data.length > 0) {
-                    if (v != 2) {                          // 20 bayt yalnızca teşhis
-                        sonBicim = "alg " + mseAd + " + " + veriAd[v] + " bayt";
-                        return r.data;
+                    StringBuilder satir = new StringBuilder();
+                    boolean hepsi6A80 = true;
+                    for (int v = 0; v < veriler.length; v++) {
+                        R r;
+                        try {
+                            if (!guvenlikOrtami(sab, mse)) {
+                                satir.append("MSE-red");
+                                hepsi6A80 = false;
+                                break;
+                            }
+                            r = (sab == 0xB6) ? pso(veriler[v], true) : icKimlik(veriler[v]);
+                        } catch (Exception e) {
+                            satir.append(veriAd[v]).append(":hata ");
+                            hepsi6A80 = false;
+                            continue;
+                        }
+                        if (r.ok() && r.data.length > 0) {
+                            sonBicim = ad + " + " + veriAd[v] + " bayt"
+                                     + (sab == 0xB6 ? " (PSO)" : " (INT-AUTH)");
+                            return r.data;
+                        }
+                        if (r.sw == 0x6982) throw new Exception(
+                                "Kart PIN doğrulamasını düşürdü (6982). Bulunanlar: " + ilginc);
+                        if (r.sw != 0x6A80) hepsi6A80 = false;
+                        satir.append(veriAd[v]).append(":").append(r.swHex()).append(" ");
                     }
-                    hepsiAyni = false;
+                    if (hepsi6A80) sikici++;
+                    else ekle(ilginc, ad + " -> " + satir.toString().trim());
                 }
-                if (r.sw == 0x6982) throw new Exception(
-                        "Kart PIN doğrulamasını düşürdü (6982). Bulunanlar: " + ilginc);
-                if (r.sw != 0x6A80) hepsiAyni = false;
-                satir.append(veriAd[v]).append(":").append(r.swHex()).append(" ");
             }
-            if (hepsiAyni) sikici++;
-            else ekle(ilginc, mseAd + " -> " + satir.toString().trim());
         }
 
-        String ozet = ilginc.length() > 0 ? ilginc.toString() : "hiçbiri";
         throw new Exception("Kart hiçbir imza biçimini kabul etmedi. "
-                + "Tümü 6A80 veren algoritma sayısı: " + sikici
-                + ". Farklı davrananlar: " + ozet);
+                + "Tümü 6A80 veren kombinasyon: " + sikici
+                + ". Farklı davrananlar: " + (ilginc.length() > 0 ? ilginc : "hiçbiri"));
     }
 
     private static void ekle(StringBuilder b, String s) {
