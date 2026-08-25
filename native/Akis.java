@@ -283,7 +283,15 @@ public class Akis {
                     ekle(gunluk, mseAdlar[m] + ": anahtar seçilemedi");
                     break;
                 }
-                R r = pso(veriler[v], true);
+                /* Bir biçimin taşıma katmanında patlaması diğerlerini
+                   denememizi engellemesin. */
+                R r;
+                try {
+                    r = pso(veriler[v], true);
+                } catch (Exception e) {
+                    ekle(gunluk, mseAdlar[m] + " + " + veriAd[v] + ": " + e.getMessage());
+                    continue;
+                }
                 if (r.ok() && r.data.length > 0) {
                     sonBicim = mseAdlar[m] + " + " + veriAd[v];
                     return r.data;
@@ -297,18 +305,22 @@ public class Akis {
             byte[][] hashVeri = {ham, birlestir(new byte[]{(byte) 0x90, 0x20}, ham)};
             String[] hashAd   = {"çıplak", "90-TLV"};
             for (int k = 0; k < hashVeri.length; k++) {
-                if (!guvenlikOrtami(mseler[m])) break;
-                R h = psoHash(hashVeri[k]);
-                if (!h.ok()) {
-                    ekle(gunluk, mseAdlar[m] + " + PSO:HASH " + hashAd[k] + ": " + h.swHex());
-                    continue;
+                try {
+                    if (!guvenlikOrtami(mseler[m])) break;
+                    R h = psoHash(hashVeri[k]);
+                    if (!h.ok()) {
+                        ekle(gunluk, mseAdlar[m] + " + PSO:HASH " + hashAd[k] + ": " + h.swHex());
+                        continue;
+                    }
+                    R r = pso(new byte[0], true);
+                    if (r.ok() && r.data.length > 0) {
+                        sonBicim = mseAdlar[m] + " + PSO:HASH " + hashAd[k];
+                        return r.data;
+                    }
+                    ekle(gunluk, mseAdlar[m] + " + PSO:HASH " + hashAd[k] + " -> CDS: " + r.swHex());
+                } catch (Exception e) {
+                    ekle(gunluk, mseAdlar[m] + " + PSO:HASH " + hashAd[k] + ": " + e.getMessage());
                 }
-                R r = pso(new byte[0], true);
-                if (r.ok() && r.data.length > 0) {
-                    sonBicim = mseAdlar[m] + " + PSO:HASH " + hashAd[k];
-                    return r.data;
-                }
-                ekle(gunluk, mseAdlar[m] + " + PSO:HASH " + hashAd[k] + " -> CDS: " + r.swHex());
             }
         }
         throw new Exception("Kart hiçbir imza biçimini kabul etmedi. " + gunluk);

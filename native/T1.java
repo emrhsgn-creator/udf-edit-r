@@ -23,12 +23,30 @@ public class T1 {
     private static final int IFSC = 254;
 
     public byte[] transmit(byte[] apdu) throws Exception {
-        if (apdu.length > IFSC)
-            throw new Exception("T=1: APDU tek bloğa sığmıyor (" + apdu.length + " bayt).");
-
         ByteArrayOutputStream out = new ByteArrayOutputStream();
-        byte[] son = blok((ns << 6), apdu);
-        byte[] cevap = ccid.transmitRaw(son);
+
+        /* Gönderme zincirlemesi: APDU IFSC'den uzunsa parçalara bölünüp
+           M biti kurulu I-bloklarıyla yollanır, kart her parçayı bir
+           R-bloğuyla onaylar. Dolgulu 256 baytlık PKCS#1 bloğu bunu
+           gerektiriyor. */
+        byte[] son = null;
+        byte[] cevap = null;
+        int off = 0;
+        while (true) {
+            int n = Math.min(IFSC, apdu.length - off);
+            boolean devam = (off + n) < apdu.length;
+            byte[] parca = new byte[n];
+            System.arraycopy(apdu, off, parca, 0, n);
+            son = blok((ns << 6) | (devam ? 0x20 : 0), parca);
+            cevap = ccid.transmitRaw(son);
+            ns ^= 1;
+            off += n;
+            if (!devam) break;
+            if (cevap == null || cevap.length < 4) throw new Exception("T=1: bozuk blok geldi.");
+            int pcb = cevap[1] & 0xFF;
+            if ((pcb & 0xC0) != 0x80)
+                throw new Exception(String.format("T=1: zincirleme onaylanmadı (%02X).", pcb));
+        }
 
         for (int adim = 0; adim < 64; adim++) {
             if (cevap == null || cevap.length < 4) throw new Exception("T=1: bozuk blok geldi.");
@@ -46,7 +64,6 @@ public class T1 {
                     cevap = ccid.transmitRaw(blok(0x80 | ((1 - kartNs) << 4), new byte[0]));
                     continue;
                 }
-                ns ^= 1;
                 return out.toByteArray();
             }
 
