@@ -130,13 +130,27 @@ public class Akis {
        standart yolu: kart 63 CX ile X hak kaldığını söyler, hak eksilmez.
        Kartta AODF olmadığı için PIN referansını böyle buluyoruz.
 
-       Dönüş: kalan hak, 0 = bloke, -1 = böyle bir PIN yok. */
-    public int pinKalan(int ref) throws Exception {
-        R r = send(new byte[]{0x00, 0x20, 0x00, (byte) ref});
-        if (r.sw == 0x9000) return 9;                       // zaten doğrulanmış
-        if ((r.sw & 0xFFF0) == 0x63C0) return r.sw & 0x0F;
-        if (r.sw == 0x6983) return 0;                       // bloke
-        return -1;
+       Ham durum kodunu döndürüyoruz, yorumu üst katmana bırakıyoruz: kartın
+       ne dediğini görmeden PIN referansı hakkında karar vermiyoruz. */
+    public int pinSw(int ref) throws Exception {
+        return send(new byte[]{0x00, 0x20, 0x00, (byte) ref}).sw;
+    }
+
+    /* Durum kodunun okunabilir karşılığı. */
+    public static String pinDurum(int sw) {
+        if (sw == 0x9000) return "zaten doğrulanmış";
+        if ((sw & 0xFFF0) == 0x63C0) return "kalan deneme: " + (sw & 0x0F);
+        if (sw == 0x6983) return "BLOKE";
+        if (sw == 0x6A88 || sw == 0x6A82) return "böyle bir PIN yok";
+        if (sw == 0x6700) return "veri alanı zorunlu, sayaç sorulamıyor";
+        if (sw == 0x6D00) return "komut desteklenmiyor";
+        if (sw == 0x6A86) return "P1/P2 kabul edilmedi";
+        return "?";
+    }
+
+    /* Dosya var mı diye bakar. SELECT hiçbir hak tüketmez, güvenli. */
+    public boolean varMi(int fid) throws Exception {
+        return send(selectApdu(0x02, 0x0C, new byte[]{(byte) (fid >> 8), (byte) fid})).ok();
     }
 
     /* AKİS'e özgü dizin komutu: 20 baytlık kayıtlar, her kaydın 2. ve 3.

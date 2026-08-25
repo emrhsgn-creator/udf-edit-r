@@ -178,6 +178,8 @@ public class Pkcs15 {
         public final List<Integer> anahtarRef = new ArrayList<>();
         public final List<Integer> pinRef = new ArrayList<>();
         public final List<String> notlar = new ArrayList<>();
+        public final List<Dosya> tarama = new ArrayList<>();
+        public final List<String> pinSorgu = new ArrayList<>();
     }
 
     public static Sonuc gez(Akis kart) throws Exception {
@@ -258,20 +260,45 @@ public class Pkcs15 {
             }
         }
 
-        /* Kartta AODF yoksa PIN referansı yazılı değil; olağan referansları
-           deneme hakkını sorarak tarıyoruz. Bu sorgu PIN göndermiyor,
-           hiçbir hakkı eksiltmiyor. */
-        if (s.pinRef.isEmpty()) {
-            int[] adaylar = {0x01, 0x81, 0x02, 0x82, 0x00, 0x83, 0x03};
-            for (int ref : adaylar) {
-                int kalan;
-                try { kalan = kart.pinKalan(ref); } catch (Exception e) { continue; }
-                if (kalan < 0) continue;
-                s.pinRef.add(ref);
-                s.notlar.add(String.format("PIN referansı %02X — kalan deneme: %s",
-                        ref, kalan == 0 ? "bloke" : String.valueOf(kalan)));
+        /* Kartta AODF listelenmemiş. Önce dizini tarıyoruz: SELECT hiçbir hak
+           tüketmediği için bu tamamen güvenli ve AODF varsa ortaya çıkarır. */
+        int[] taranacak = {
+            0x2F01, 0x2F02, 0x2F03, 0x2F04, 0x2F05, 0x2F06, 0x2F07, 0x2F08,
+            0x2F09, 0x2F0A, 0x2F0B, 0x2F0C, 0x2F0D, 0x2F0E, 0x2F0F, 0x2F10,
+            0x2F11, 0x2F12, 0x5031, 0x5032, 0x5033, 0x5034, 0x5035
+        };
+        for (int fid : taranacak) {
+            try {
+                if (!kart.varMi(fid)) continue;
+                byte[] icerik = kart.readBinary();
+                Dosya f = new Dosya();
+                f.ad = String.format("tarama %04X", fid);
+                f.yol = new byte[]{(byte) (fid >> 8), (byte) fid};
+                f.icerik = icerik;
+                s.tarama.add(f);
+            } catch (Exception ignored) {}
+        }
+
+        /* PIN referansı: veri alanı olmayan VERIFY ile sayaç sorulur, PIN
+           gönderilmez, hak eksilmez. Kartın ham cevabını rapora yazıyoruz —
+           tanıyamadığımız bir kod gelirse ona bakarak karar vereceğiz.
+           Hem PKCS#15 dizininde hem MF'te deniyoruz; PIN genel olabilir. */
+        int[] adaylar = {0x01, 0x81, 0x02, 0x82, 0x00, 0x83, 0x03};
+        for (int yer = 0; yer < 2; yer++) {
+            String nerede;
+            if (yer == 0) {
+                nerede = "PKCS#15 dizininde";
+            } else {
+                nerede = "MF'te";
+                kart.selectId(0x3F00);
             }
-            if (s.pinRef.isEmpty()) s.notlar.add("Kart hiçbir PIN referansını tanımadı.");
+            for (int ref : adaylar) {
+                int sw;
+                try { sw = kart.pinSw(ref); } catch (Exception e) { continue; }
+                String durum = Akis.pinDurum(sw);
+                s.pinSorgu.add(String.format("%s ref %02X -> %04X  (%s)", nerede, ref, sw, durum));
+                if ((sw & 0xFFF0) == 0x63C0 || sw == 0x9000 || sw == 0x6983) s.pinRef.add(ref);
+            }
         }
 
         return s;

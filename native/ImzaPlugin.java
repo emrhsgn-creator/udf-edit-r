@@ -170,6 +170,21 @@ public class ImzaPlugin extends Plugin {
                     }
                     r.put("dosyalar", dosyalar);
 
+                    JSArray tarama = new JSArray();
+                    for (Pkcs15.Dosya f : s.tarama) {
+                        JSObject o = new JSObject();
+                        o.put("ad", f.ad);
+                        o.put("yol", Ccid.hex(f.yol));
+                        o.put("uzunluk", f.icerik == null ? 0 : f.icerik.length);
+                        o.put("hex", ozet(f.icerik));
+                        tarama.put(o);
+                    }
+                    r.put("tarama", tarama);
+
+                    JSArray pinSorgu = new JSArray();
+                    for (String v : s.pinSorgu) pinSorgu.put(v);
+                    r.put("pinSorgu", pinSorgu);
+
                     JSArray sertifikalar = new JSArray();
                     SimpleDateFormat df = new SimpleDateFormat("dd.MM.yyyy", new Locale("tr", "TR"));
                     for (int i = 0; i < s.sertifikalar.size(); i++) {

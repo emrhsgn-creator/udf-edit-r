@@ -68,6 +68,11 @@
       s.push("geçerlilik: " + c.baslangic + " – " + c.bitis + (c.gecerli ? "" : " (SÜRESİ GEÇMİŞ)"));
       s.push("anahtar: " + c.anahtar + ", imza: " + c.imzaAlgoritmasi);
     });
+    (r.tarama || []).forEach(function (f) {
+      s.push("--- tarama " + f.ad + "  (" + f.uzunluk + " bayt)");
+      s.push(f.hex || "-");
+    });
+    (r.pinSorgu || []).forEach(function (v) { s.push("pin " + v); });
     (r.denemeler || []).forEach(function (d) {
       s.push("deneme " + d.ad + "  [" + d.komut + "] -> " + (d.cevap || "(boş)"));
     });
@@ -110,6 +115,16 @@
       p15 += kutu(f.ad + "  ·  yol " + f.yol + "  ·  " + f.uzunluk + " bayt", f.hex);
     });
     h += bolum("PKCS#15", p15);
+
+    var tar = (r.tarama || []).map(function (f) {
+      return kutu(f.ad + "  ·  " + f.uzunluk + " bayt", f.hex || "(okunamadı)");
+    }).join("");
+    if (tar) h += bolum("Dizin taraması", tar);
+
+    if ((r.pinSorgu || []).length) {
+      h += bolum("PIN sorgusu", '<div style="' + KUTU + '">' +
+        esc(r.pinSorgu.join("\n")) + "</div>");
+    }
 
     var den = (r.denemeler || []).map(function (d) {
       return kutu(d.ad + "  ·  " + d.komut, d.cevap || "(boş)");
