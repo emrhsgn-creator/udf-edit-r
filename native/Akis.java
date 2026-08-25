@@ -206,29 +206,26 @@ public class Akis {
         return send(apdu).ok();
     }
 
-    /* INTERNAL AUTHENTICATE — PSO: CDS yerine bununla imzalatan kartlar var. */
-    private R icKimlik(byte[] veri) throws Exception {
+    /* PSO: COMPUTE DIGITAL SIGNATURE. P2 veri alanının ne taşıdığını
+       söylüyor (ISO 7816-8): 9A imzalanacak veri, AC dolgu göstergesi +
+       veri, BC hazır DSI. */
+    private R pso(int p2, byte[] veri) throws Exception {
         byte[] apdu = new byte[6 + veri.length];
-        apdu[0] = 0x00;
-        apdu[1] = (byte) 0x88;
-        apdu[2] = 0x00;
-        apdu[3] = 0x00;
-        apdu[4] = (byte) veri.length;
-        System.arraycopy(veri, 0, apdu, 5, veri.length);
-        apdu[apdu.length - 1] = 0x00;
-        return send(apdu);
-    }
-
-    private R pso(byte[] veri, boolean le) throws Exception {
-        byte[] apdu = new byte[(le ? 6 : 5) + veri.length];
         apdu[0] = 0x00;
         apdu[1] = 0x2A;
         apdu[2] = (byte) 0x9E;
-        apdu[3] = (byte) 0x9A;
+        apdu[3] = (byte) p2;
         apdu[4] = (byte) veri.length;
         System.arraycopy(veri, 0, apdu, 5, veri.length);
-        if (le) apdu[apdu.length - 1] = 0x00;
+        apdu[apdu.length - 1] = 0x00;                 // Le zorunlu
         return send(apdu);
+    }
+
+    private static byte[] onEkle(int bayt, byte[] veri) {
+        byte[] b = new byte[veri.length + 1];
+        b[0] = (byte) bayt;
+        System.arraycopy(veri, 0, b, 1, veri.length);
+        return b;
     }
 
     /* Kullanılan imza biçimi — çalışan kombinasyon bulununca doldurulur,
@@ -237,73 +234,72 @@ public class Akis {
 
     /* İmzayı kart atıyor; özel anahtar kartı hiç terk etmiyor.
 
-       Önceki tur her şeyi eledi: algoritma göstergesinin 19 değeri, üç ayrı
-       veri uzunluğu (20 / 32 / 51) — hepsi istisnasız 6A80. Yani sorun ne
-       veri biçiminde ne uzunlukta. Geriye komutun kendisi ve anahtarın
-       adreslenişi kalıyor:
+       Elenenler (hepsi cihazda denendi):
+         - Veri biçimi ve uzunluğu: 20 / 32 / 51 bayt, hepsi 6A80
+         - Algoritma göstergesinin 19 değeri: hepsi 6A80
+         - Anahtar etiketi 84/83, referans 01/81: hepsi 6A80
+         - INTERNAL AUTHENTICATE (A4 + 00 88): 6A87
+         - PSO: HASH: 6A86, kart desteklemiyor
+         - 256 baytlık blok: kart gönderme zincirlemesini onaylamıyor
 
-         - Anahtar referansı: PrKDF 1 diyor, ama özel anahtar referansını
-           yüksek bit kurulu (0x81) bekleyen kartlar yaygın. Etiket de 84
-           yerine 83 olabilir.
-         - Komut: PSO: CDS yerine INTERNAL AUTHENTICATE ile imzalatan
-           kartlar var; o zaman güvenlik ortamı da B6 yerine A4 şablonuyla
-           kurulur.
+       Kalan ipucu, INTERNAL AUTHENTICATE'in verdiği 6A87: "Lc, P1-P2 ile
+       tutarsız". Bu kart komut parametreleriyle veri alanı arasındaki
+       ilişkiye titiz — ve PSO'yu şimdiye kadar hep tek bir P2 değeriyle
+       (9A) denedik. ISO 7816-8 üç seçenek tanımlıyor:
+
+         9A  veri alanı imzalanacak veriyi taşır
+         AC  veri alanı dolgu göstergesi + veriyi taşır
+         BC  veri alanı hazır DSI'yi taşır
+
+       6A80 zaten tam olarak "veri alanı P1-P2'nin ima ettiğiyle uyuşmuyor"
+       demek. Üçünü de deniyoruz.
 
        PIN bir kez doğrulandıktan sonra bu denemeler deneme hakkı tüketmiyor. */
     public byte[] imzala(int anahtarRef, byte[] digestInfo) throws Exception {
         byte[] h32 = new byte[32];
         System.arraycopy(digestInfo, digestInfo.length - 32, h32, 0, 32);
 
-        byte[][] veriler = {h32, digestInfo};
-        String[] veriAd  = {"32", "51"};
+        int[]    p2ler   = {0x9A, 0x9A, 0xAC, 0xAC, 0xAC, 0xAC, 0xBC, 0xBC};
+        byte[][] veriler = {h32, digestInfo,
+                            onEkle(0x00, h32), onEkle(0x01, h32), onEkle(0x02, h32),
+                            onEkle(0x01, digestInfo),
+                            h32, digestInfo};
+        String[] adlar   = {"9A/32", "9A/51", "AC/00+32", "AC/01+32", "AC/02+32",
+                            "AC/01+51", "BC/32", "BC/51"};
 
-        int[] sablonlar = {0xB6, 0xA4};
-        int[] etiketler = {0x84, 0x83};
-        int[] refler    = {anahtarRef, anahtarRef | 0x80};
+        byte[][] mseler   = {{(byte) 0x84, 0x01, (byte) anahtarRef},
+                             {(byte) 0x84, 0x01, (byte) anahtarRef, (byte) 0x80, 0x01, 0x02}};
+        String[] mseAdlar = {"yalın", "alg02"};
 
         StringBuilder ilginc = new StringBuilder();
         int sikici = 0;
 
-        for (int sab : sablonlar) {
-            for (int etiket : etiketler) {
-                for (int ref : refler) {
-                    String ad = String.format("%02X/%02X/%02X", sab, etiket, ref);
-                    byte[] mse = {(byte) etiket, 0x01, (byte) ref};
-
-                    StringBuilder satir = new StringBuilder();
-                    boolean hepsi6A80 = true;
-                    for (int v = 0; v < veriler.length; v++) {
-                        R r;
-                        try {
-                            if (!guvenlikOrtami(sab, mse)) {
-                                satir.append("MSE-red");
-                                hepsi6A80 = false;
-                                break;
-                            }
-                            r = (sab == 0xB6) ? pso(veriler[v], true) : icKimlik(veriler[v]);
-                        } catch (Exception e) {
-                            satir.append(veriAd[v]).append(":hata ");
-                            hepsi6A80 = false;
-                            continue;
-                        }
-                        if (r.ok() && r.data.length > 0) {
-                            sonBicim = ad + " + " + veriAd[v] + " bayt"
-                                     + (sab == 0xB6 ? " (PSO)" : " (INT-AUTH)");
-                            return r.data;
-                        }
-                        if (r.sw == 0x6982) throw new Exception(
-                                "Kart PIN doğrulamasını düşürdü (6982). Bulunanlar: " + ilginc);
-                        if (r.sw != 0x6A80) hepsi6A80 = false;
-                        satir.append(veriAd[v]).append(":").append(r.swHex()).append(" ");
+        for (int m = 0; m < mseler.length; m++) {
+            for (int i = 0; i < p2ler.length; i++) {
+                R r;
+                try {
+                    if (!guvenlikOrtami(0xB6, mseler[m])) {
+                        ekle(ilginc, mseAdlar[m] + ": MSE reddedildi");
+                        break;
                     }
-                    if (hepsi6A80) sikici++;
-                    else ekle(ilginc, ad + " -> " + satir.toString().trim());
+                    r = pso(p2ler[i], veriler[i]);
+                } catch (Exception e) {
+                    ekle(ilginc, mseAdlar[m] + " " + adlar[i] + ": " + e.getMessage());
+                    continue;
                 }
+                if (r.ok() && r.data.length > 0) {
+                    sonBicim = mseAdlar[m] + " + " + adlar[i];
+                    return r.data;
+                }
+                if (r.sw == 0x6982) throw new Exception(
+                        "Kart PIN doğrulamasını düşürdü (6982). Bulunanlar: " + ilginc);
+                if (r.sw == 0x6A80) sikici++;
+                else ekle(ilginc, mseAdlar[m] + " " + adlar[i] + ": " + r.swHex());
             }
         }
 
         throw new Exception("Kart hiçbir imza biçimini kabul etmedi. "
-                + "Tümü 6A80 veren kombinasyon: " + sikici
+                + "6A80 veren deneme: " + sikici
                 + ". Farklı davrananlar: " + (ilginc.length() > 0 ? ilginc : "hiçbiri"));
     }
 

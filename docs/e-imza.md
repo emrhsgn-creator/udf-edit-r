@@ -243,6 +243,35 @@ Doğrulama (`javac` + `openssl`, cihaz gerekmeden):
 2. Gerçek UYAP imzasıyla yapı karşılaştırması: `openssl asn1parse` çıktısı
    **178 satır / 178 satır, tek fark imza zamanı**. Toplam boyut da aynı.
 
+### İmza komutu — elenenler
+
+Kartın imza komutunun tam biçimi belgesiz ve cihazda tek tek deneniyor.
+Şu ana kadar kesin olarak elenenler:
+
+| Denenen | Sonuç |
+|---|---|
+| Veri uzunluğu 20 / 32 / 51 bayt | hepsi `6A80` |
+| Algoritma göstergesinin 19 değeri (`02`, `10`–`14`, `20`–`25`, `30`, `40`–`46`, `00`, algoritmasız) | hepsi `6A80` |
+| Anahtar etiketi `84` / `83`, referans `01` / `81` | hepsi `6A80` |
+| `INTERNAL AUTHENTICATE` (`00 22 41 A4` + `00 88`) | `6A87` |
+| `PSO: HASH` (`00 2A 90 A0`) | `6A86` — kart desteklemiyor |
+| 256 baytlık dolgulu PKCS#1 bloğu | kart gönderme zincirlemesini onaylamıyor |
+| `Le` olmadan gönderim | `6700` — `Le` zorunlu |
+
+Bu arada öğrenilen iki şey:
+
+- **MSE hiçbir şeyi doğrulamıyor.** `00 22 41 B6` her içeriğe `90 00` diyor —
+  anlamsız anahtar referansına bile. Doğrulamayı PSO'ya bırakıyor.
+- **Kartın PKCS#15 üstverisi güvenilmez.** PrKDF'te `usage` bit dizisi
+  tamamen sıfır (hiçbir kullanım izni yok) ve `accessFlags` anahtarı
+  "çıkarılabilir" gösteriyor. Nitelikli imza anahtarı için ikisi de
+  saçma; üstveri süs.
+
+Sıradaki hipotez: `6A87` ("Lc, P1-P2 ile tutarsız") bu kartın komut
+parametreleriyle veri alanı arasındaki ilişkiye titiz olduğunu gösteriyor.
+PSO şimdiye kadar hep `P2 = 9A` ile denendi; ISO 7816-8 ayrıca `AC` (dolgu
+göstergesi + veri) ve `BC` (hazır DSI) tanımlıyor.
+
 Kart tarafındaki sıra:
 
 ```
