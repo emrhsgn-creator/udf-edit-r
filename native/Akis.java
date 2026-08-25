@@ -148,6 +148,79 @@ public class Akis {
         return "?";
     }
 
+    /* PIN doğrular. Dönüş: ham durum kodu.
+
+       6700 (uzunluk beğenilmedi) karşılaştırma yapılmadan önce dönen bir
+       biçim hatası, deneme hakkı tüketmez; o yüzden dolgulu biçimleri
+       denemek güvenli. 63 CX geldiğinde ise DENEME HAKKI GİTMİŞTİR,
+       kesinlikle tekrar denemiyoruz — kararı kullanıcı verir. */
+    public int pinDogrula(int ref, String pin) throws Exception {
+        byte[] ham = pin.getBytes("US-ASCII");
+        R r = send(verifyApdu(ref, ham));
+        if (r.sw == 0x6700 && ham.length < 8) {
+            r = send(verifyApdu(ref, dolgula(ham, (byte) 0xFF)));
+            if (r.sw == 0x6700) r = send(verifyApdu(ref, dolgula(ham, (byte) 0x00)));
+        }
+        return r.sw;
+    }
+
+    private static byte[] verifyApdu(int ref, byte[] veri) {
+        byte[] apdu = new byte[5 + veri.length];
+        apdu[0] = 0x00;
+        apdu[1] = 0x20;
+        apdu[2] = 0x00;
+        apdu[3] = (byte) ref;
+        apdu[4] = (byte) veri.length;
+        System.arraycopy(veri, 0, apdu, 5, veri.length);
+        return apdu;
+    }
+
+    private static byte[] dolgula(byte[] pin, byte dolgu) {
+        byte[] b = new byte[8];
+        java.util.Arrays.fill(b, dolgu);
+        System.arraycopy(pin, 0, b, 0, Math.min(pin.length, 8));
+        return b;
+    }
+
+    /* Kartın tanıdığı PIN referansını bulur. 6A88 "böyle bir nesne yok"
+       demek; başka her cevap nesnenin var olduğunu gösteriyor. */
+    public int pinRefBul() throws Exception {
+        int[] adaylar = {0x81, 0x01, 0x82, 0x02};
+        for (int ref : adaylar) {
+            int sw = pinSw(ref);
+            if (sw != 0x6A88 && sw != 0x6A86) return ref;
+        }
+        return -1;
+    }
+
+    /* İmzalanacak anahtarı seçer. Standart biçim bu kartta 90 00 veriyor;
+       kısa biçim yedek. (AKİS v1.0'ın 00 22 C3 biçimi 6A 86 veriyor.) */
+    public boolean guvenlikOrtami(int anahtarRef) throws Exception {
+        byte[] tam = {0x00, 0x22, 0x41, (byte) 0xB6, 0x06,
+                      (byte) 0x84, 0x01, (byte) anahtarRef, (byte) 0x80, 0x01, 0x02};
+        if (send(tam).ok()) return true;
+        byte[] kisa = {0x00, 0x22, 0x41, (byte) 0xB6, 0x03,
+                       (byte) 0x84, 0x01, (byte) anahtarRef};
+        return send(kisa).ok();
+    }
+
+    /* PSO: COMPUTE DIGITAL SIGNATURE — asıl imza kartın içinde atılıyor,
+       özel anahtar kartı hiç terk etmiyor. */
+    public byte[] imzala(byte[] digestInfo) throws Exception {
+        byte[] apdu = new byte[6 + digestInfo.length];
+        apdu[0] = 0x00;
+        apdu[1] = 0x2A;
+        apdu[2] = (byte) 0x9E;
+        apdu[3] = (byte) 0x9A;
+        apdu[4] = (byte) digestInfo.length;
+        System.arraycopy(digestInfo, 0, apdu, 5, digestInfo.length);
+        apdu[apdu.length - 1] = 0x00;                 // Le
+        R r = send(apdu);
+        if (!r.ok()) throw new Exception("Kart imzalamayı reddetti (" + r.swHex() + ").");
+        if (r.data.length == 0) throw new Exception("Kart boş imza döndürdü.");
+        return r.data;
+    }
+
     /* Dosya var mı diye bakar. SELECT hiçbir hak tüketmez, güvenli. */
     public boolean varMi(int fid) throws Exception {
         return send(selectApdu(0x02, 0x0C, new byte[]{(byte) (fid >> 8), (byte) fid})).ok();

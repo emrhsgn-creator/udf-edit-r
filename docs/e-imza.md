@@ -154,7 +154,8 @@ native/Ccid.java            CCID/USB taşıma katmanı            ✓
 native/Akis.java            AKİS APDU komutları                ✓
 native/Pkcs15.java          kart üzerindeki nesneleri okur     ✓
 native/ImzaPlugin.java      Capacitor köprüsü                  ✓
-native/Cms.java             BouncyCastle ile CAdES-BES         — sırada
+native/T1.java              T=1 blok protokolü                 ✓
+native/Cms.java             CAdES-BES üretimi (kendi DER'i)    ✓
 scripts/patch-android.mjs   native/*.java kopyalar, manifest    ✓
 www/imza-bridge.js          tanı ekranı (PIN diyaloğu sırada)   ✓
 src/shell.html              Araçlar → "Token tanı"              ✓
@@ -193,15 +194,75 @@ Rapor yorumlanmış alanların yanında **ham dökümü de** taşıyor. Amaç bu
 imzalama katmanı, tahmine değil cihazdan gelen gerçek çıktıya bakılarak
 yazılacak.
 
-### Sonraki adım
+## Karttan öğrenilenler
 
-Tanı raporu elde edildikten sonra:
+Cihazdaki tanı turlarının sonucu. Buradaki her değer gerçek kartın
+cevabından geldi, hiçbiri varsayım değil.
 
-1. ATR'ye göre kart sürümü doğrulanır
-2. AODF'den PIN referansı, PrKDF'den anahtar referansı kesinleştirilir
-3. PIN diyaloğu + `00 20 00 <pinRef>` (kalan hak gösterilerek)
-4. `00 22 C3 <keyRef>` → `00 2A 9E 9A <DigestInfo>`
-5. BouncyCastle ile CAdES-BES paketleme, `sign.sgn` olarak arşive ekleme
+| | |
+|---|---|
+| Okuyucu | ACS ACR39U, `dwFeatures = 0x000100B2` → **ham TPDU** kipi |
+| Kart | T=1; ATR `3B 9F 97 81 31 FE 45 80 65 54 43 D2 21 08 31 C0 73 F6 21 80 81 05 5B` |
+| PKCS#15 dizini | DF adı **`"PKCS-15"`** (7 bayt ASCII), dosya kimliği `3D01` |
+| EF(DIR) | **yok** (`6A 82`) — kartta bulunmuyor, gerek de kalmadı |
+| ODF | `5031`: PrKDF `2F01`, PuKDF `2F02`, SKDF `2F03`, CDF `2F04`, DODF `2F05` |
+| AODF | ODF'te **listelenmemiş** |
+| Sertifika | `2F10`, 1528 bayt |
+| Anahtar referansı | **1** (PuKDF'ten; PrKDF `69 82` veriyor, PIN korumalı) |
+| PIN referansı | **`0x81`** (PKCS#15 dizinine yerel; `0x82` de var) |
+| Güvenlik ortamı | `00 22 41 B6 06 84 01 01 80 01 02` → `90 00` |
+| SELECT biçimi | `P2 = 0x0C` ve `P2 = 0x00` ikisi de kabul ediliyor |
+
+Çalışmayanlar — denemeye değmez:
+
+- `00 22 C3 <ref>` (OpenSC'deki AKİS v1.0 biçimi) → `6A 86`
+- `80 18` (AKİS dizin komutu) → `6D 00`
+- 12 baytlık standart PKCS#15 AID → `6A 82`
+
+### PIN referansı nasıl bulundu
+
+Kartta AODF olmadığı için referans yazılı değil. Veri alanı olmayan VERIFY
+(`00 20 00 <ref>`) ile tarandı — bu komut PIN göndermez ve deneme hakkı
+tüketmez. Ayrım net:
+
+- `67 00` → nesne **var**, kart yalnızca sayaç sorgusunu desteklemiyor
+- `6A 88` → böyle bir nesne **yok**
+
+`0x81` ve `0x82` `67 00` verdi, diğer bütün adresler `6A 88`. MF'te ise
+`0x81` de `6A 88` veriyor; yani PIN'ler PKCS#15 dizinine yerel.
+
+## İmzalama
+
+`native/Cms.java` `sign.sgn`'ı üretiyor. BouncyCastle kullanılmadı: yapı
+zaten belli olduğu için kendi DER yazıcısı yazıldı, böylece Android
+derlemesine bağımlılık eklenmedi ve **bilgisayarda sınanabiliyor**.
+
+Doğrulama (`javac` + `openssl`, cihaz gerekmeden):
+
+1. Üretilen imza `openssl smime -verify` ile geçiyor.
+2. Gerçek UYAP imzasıyla yapı karşılaştırması: `openssl asn1parse` çıktısı
+   **178 satır / 178 satır, tek fark imza zamanı**. Toplam boyut da aynı.
+
+Kart tarafındaki sıra:
+
+```
+PKCS#15 dizinine gir  →  sertifikayı oku (2F10)
+00 20 00 81 <PIN>            PIN doğrula
+00 22 41 B6 06 84 01 01 80 01 02   anahtarı seç
+00 2A 9E 9A 33 <DigestInfo> 00     kartta imzala → 256 bayt
+```
+
+İmzalanan şey content.xml'in baytları değil, **signedAttrs'ın DER SET
+kodlamasının SHA-256'sı** (CMS kuralı). content.xml'in özeti messageDigest
+özniteliğinde taşınıyor.
+
+PIN ele alışı:
+
+- Cihazda saklanmıyor, her imzada soruluyor.
+- `67 00` (uzunluk beğenilmedi) karşılaştırmadan önce dönüyor, hak
+  tüketmiyor; yalnızca o durumda dolgulu biçimler deneniyor.
+- `63 CX` geldiğinde **hak gitmiştir**; kod asla kendiliğinden tekrar
+  denemiyor, kalan hakkı yazıp duruyor.
 
 ---
 

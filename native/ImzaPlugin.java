@@ -8,6 +8,7 @@ import android.content.IntentFilter;
 import android.hardware.usb.UsbDevice;
 import android.hardware.usb.UsbManager;
 import android.os.Build;
+import android.util.Base64;
 
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
@@ -16,12 +17,17 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.security.PublicKey;
 import java.security.cert.X509Certificate;
 import java.security.interfaces.RSAPublicKey;
 import java.text.SimpleDateFormat;
 import java.util.Locale;
 import java.util.Map;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
+import java.util.zip.ZipOutputStream;
 
 /* E-imza eklentisi — şimdilik yalnızca tanı.
 
@@ -70,6 +76,121 @@ public class ImzaPlugin extends Plugin {
         }
         if (mgr.hasPermission(dev)) { calistir(call, mgr, dev); return; }
         izinIste(call, mgr, dev);
+    }
+
+    /* Belgeyi imzalar: gelen .udf'in içinden content.xml çıkarılır, kartta
+       imzalanır, sonuç sign.sgn olarak aynı arşive eklenir.
+
+       content.xml'in baytlarına dokunulmuyor — imza tam olarak o baytların
+       üzerinde ve arşiv yeniden yazılsa bile geçerli kalıyor. */
+    @PluginMethod
+    public void imzala(final PluginCall call) {
+        final String udfB64 = call.getString("udf");
+        final String pin = call.getString("pin");
+        if (udfB64 == null || pin == null || pin.isEmpty()) {
+            call.reject("Belge ya da PIN eksik.");
+            return;
+        }
+        final UsbManager mgr = (UsbManager) getContext().getSystemService(Context.USB_SERVICE);
+        if (mgr == null) { call.reject("Bu cihazda USB desteği yok."); return; }
+        final UsbDevice dev = okuyucuBul(mgr);
+        if (dev == null) { call.reject("Takılı bir akıllı kart okuyucu bulunamadı."); return; }
+        if (!mgr.hasPermission(dev)) { call.reject("Önce Token tanı ile USB izni verin."); return; }
+
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                Ccid ccid = null;
+                try {
+                    byte[] udf = Base64.decode(udfB64, Base64.DEFAULT);
+                    final byte[] icerik = contentXml(udf);
+
+                    ccid = new Ccid(mgr, dev);
+                    byte[] atr = ccid.powerOn();
+                    ccid.protokolSec(atr);
+                    final Akis kart = new Akis(ccid);
+
+                    Pkcs15.Sonuc s = Pkcs15.gez(kart, false);
+                    if (s.sertifikaDer.isEmpty()) throw new Exception("Kartta sertifika bulunamadı.");
+                    byte[] sertifika = s.sertifikaDer.get(0);
+                    final int anahtarRef = s.anahtarRef.isEmpty() ? 1 : s.anahtarRef.get(0);
+
+                    int pinRef = kart.pinRefBul();
+                    if (pinRef < 0) throw new Exception("Kartta PIN nesnesi bulunamadı.");
+
+                    int sw = kart.pinDogrula(pinRef, pin);
+                    if (sw != 0x9000) {
+                        if ((sw & 0xFFF0) == 0x63C0)
+                            throw new Exception("PIN yanlış. Kalan deneme hakkı: " + (sw & 0x0F));
+                        if (sw == 0x6983)
+                            throw new Exception("PIN bloke. Kartı PUK ile açmanız gerekiyor.");
+                        throw new Exception(String.format("PIN kabul edilmedi (%04X).", sw));
+                    }
+
+                    if (!kart.guvenlikOrtami(anahtarRef))
+                        throw new Exception("İmza anahtarı seçilemedi.");
+
+                    byte[] sgn = Cms.uret(icerik, sertifika, new java.util.Date(),
+                        new Cms.Imzalayici() {
+                            @Override
+                            public byte[] imzala(byte[] digestInfo) throws Exception {
+                                return kart.imzala(digestInfo);
+                            }
+                        });
+
+                    JSObject r = new JSObject();
+                    r.put("udf", Base64.encodeToString(sgnEkle(udf, sgn), Base64.NO_WRAP));
+                    r.put("imza", sgn.length);
+                    call.resolve(r);
+                } catch (Exception e) {
+                    String m = e.getMessage();
+                    call.reject(m == null || m.isEmpty() ? e.toString() : m);
+                } finally {
+                    if (ccid != null) ccid.close();
+                }
+            }
+        }).start();
+    }
+
+    /* Arşivden content.xml'i ham hâliyle çıkarır. */
+    private static byte[] contentXml(byte[] udf) throws Exception {
+        ZipInputStream z = new ZipInputStream(new ByteArrayInputStream(udf));
+        ZipEntry e;
+        while ((e = z.getNextEntry()) != null) {
+            if (!"content.xml".equals(e.getName())) continue;
+            ByteArrayOutputStream o = new ByteArrayOutputStream();
+            byte[] tampon = new byte[8192];
+            int n;
+            while ((n = z.read(tampon)) > 0) o.write(tampon, 0, n);
+            z.close();
+            return o.toByteArray();
+        }
+        z.close();
+        throw new Exception("Belgede content.xml yok.");
+    }
+
+    /* Arşivi sign.sgn ekleyerek yeniden yazar. Var olan girişler baytı
+       baytına korunuyor; imza content.xml'in baytları üzerinde olduğu için
+       yeniden sıkıştırma imzayı bozmuyor. */
+    private static byte[] sgnEkle(byte[] udf, byte[] sgn) throws Exception {
+        ByteArrayOutputStream cikti = new ByteArrayOutputStream();
+        ZipOutputStream zo = new ZipOutputStream(cikti);
+        ZipInputStream zi = new ZipInputStream(new ByteArrayInputStream(udf));
+        ZipEntry e;
+        byte[] tampon = new byte[8192];
+        while ((e = zi.getNextEntry()) != null) {
+            if ("sign.sgn".equals(e.getName())) continue;      // eskisi varsa düşsün
+            zo.putNextEntry(new ZipEntry(e.getName()));
+            int n;
+            while ((n = zi.read(tampon)) > 0) zo.write(tampon, 0, n);
+            zo.closeEntry();
+        }
+        zi.close();
+        zo.putNextEntry(new ZipEntry("sign.sgn"));
+        zo.write(sgn);
+        zo.closeEntry();
+        zo.close();
+        return cikti.toByteArray();
     }
 
     private UsbDevice okuyucuBul(UsbManager mgr) {

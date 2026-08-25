@@ -182,7 +182,11 @@ public class Pkcs15 {
         public final List<String> pinSorgu = new ArrayList<>();
     }
 
-    public static Sonuc gez(Akis kart) throws Exception {
+    public static Sonuc gez(Akis kart) throws Exception { return gez(kart, true); }
+
+    /* derinTara: dizin taraması ve PIN sorgusu. Tanı ekranı için gerekli,
+       imzalarken gereksiz — imza yolunda kartı boş yere yormuyoruz. */
+    public static Sonuc gez(Akis kart, boolean derinTara) throws Exception {
         Sonuc s = new Sonuc();
 
         kart.selectId(0x3F00);
@@ -259,6 +263,8 @@ public class Pkcs15 {
                 if (c != null) { s.sertifikalar.add(c); s.sertifikaDer.add(der); }
             }
         }
+
+        if (!derinTara) return s;
 
         /* Kartta AODF listelenmemiş. Önce dizini tarıyoruz: SELECT hiçbir hak
            tüketmediği için bu tamamen güvenli ve AODF varsa ortaya çıkarır. */

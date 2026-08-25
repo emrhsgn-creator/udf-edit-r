@@ -209,8 +209,102 @@
     }
   }
 
+  // ---------------- imzalama ----------------
+
+  function blobB64(blob) {
+    return new Promise(function (res, rej) {
+      var r = new FileReader();
+      r.onload = function () { res(String(r.result).split(",")[1]); };
+      r.onerror = rej;
+      r.readAsDataURL(blob);
+    });
+  }
+
+  function pinSor() {
+    return new Promise(function (res) {
+      dialog("E-imza",
+        '<div class="fld"><label>Kart PIN kodu</label>' +
+        '<input type="password" id="imzaPin" inputmode="numeric" autocomplete="off"></div>' +
+        '<div style="font-size:12px;color:#5A6470;line-height:1.5">' +
+        'PIN kartta doğrulanır, cihazda saklanmaz.<br>' +
+        '<b style="color:#A8121C">Yanlış PIN deneme hakkı eksiltir;</b> haklar bitince ' +
+        'kart bloke olur ve PUK gerekir.</div>',
+        '<button class="wb" id="imzaVaz">Vazgeç</button><span class="sp"></span>' +
+        '<button class="wb pri" id="imzaTamam">İmzala</button>',
+        function () {
+          var giris = document.getElementById("imzaPin");
+          giris.focus();
+          document.getElementById("imzaVaz").onclick = function () { closeDialog(); res(null); };
+          document.getElementById("imzaTamam").onclick = function () {
+            var v = giris.value;
+            closeDialog();
+            res(v || null);
+          };
+          giris.onkeydown = function (e) {
+            if (e.key === "Enter") document.getElementById("imzaTamam").click();
+          };
+        });
+    });
+  }
+
+  async function imzala() {
+    if (!yerli()) {
+      showNotice('<span class="mk">!</span><span><b>İmzalama yalnızca uygulamada yapılabilir.</b><br>' +
+        "Tarayıcı sürümünde USB donanımına erişilemiyor.</span>");
+      return;
+    }
+    var Imza = Capacitor.Plugins.Imza, Dosya = Capacitor.Plugins.Dosya;
+    if (!Imza || !Dosya) {
+      showNotice('<span class="mk">!</span><span>İmza bileşeni bulunamadı. ' +
+        "Uygulamayı yeni sürümle güncelleyin.</span>");
+      return;
+    }
+    if (!doc.loaded) {
+      showNotice('<span class="mk">!</span><span>Önce bir belge açın.</span>');
+      return;
+    }
+
+    /* Kaydetmedeki doğrulamanın aynısı: eksik belge imzalanmasın. */
+    var uretim = await window.udfUret();
+    if (!uretim.ok) {
+      showNotice('<span class="mk">!</span><span><b>Belge eksik üretildi, imzalama durduruldu.</b><br>' +
+        "Editörde " + uretim.beklenen + " karakter var, dosyaya " + uretim.gelen +
+        " karakter yazılıyor.</span>");
+      return;
+    }
+
+    var pin = await pinSor();
+    if (!pin) return;
+
+    showNotice('<span class="mk">⋯</span><span>Kartta imzalanıyor…</span>');
+    var sonuc;
+    try {
+      sonuc = await Imza.imzala({ udf: await blobB64(uretim.blob), pin: pin });
+    } catch (e) {
+      showNotice('<span class="mk">!</span><span><b>İmzalanamadı.</b><br>' +
+        esc(String((e && e.message) || e)) + "</span>");
+      return;
+    }
+
+    var ad = String(doc.name || "belge").replace(/\.udf$/i, "")
+      .replace(/[\/\\:*?"<>|]/g, "_") + "-imzali.udf";
+    try {
+      await Dosya.farkliKaydet({ ad: ad, veri: sonuc.udf });
+      showNotice('<span class="mk">✓</span><span><b>' + esc(ad) + '</b> imzalandı ve kaydedildi.' +
+        "<br>İmza " + sonuc.imza + " bayt.</span>");
+      setTimeout(hideNotice, 5000);
+    } catch (e) {
+      if (String(e && e.message) === "iptal") { hideNotice(); return; }
+      showNotice('<span class="mk">!</span><span><b>İmza atıldı ama dosya kaydedilemedi.</b><br>' +
+        esc(String((e && e.message) || e)) + "</span>");
+    }
+  }
+
   window.tokenTani = tani;
+  window.udfImzala = imzala;
 
   var b = document.getElementById("bTokenTani");
   if (b) b.onclick = tani;
+  var bi = document.getElementById("bImzala");
+  if (bi) bi.onclick = imzala;
 })();
