@@ -68,6 +68,9 @@
       s.push("geçerlilik: " + c.baslangic + " – " + c.bitis + (c.gecerli ? "" : " (SÜRESİ GEÇMİŞ)"));
       s.push("anahtar: " + c.anahtar + ", imza: " + c.imzaAlgoritmasi);
     });
+    (r.denemeler || []).forEach(function (d) {
+      s.push("deneme " + d.ad + "  [" + d.komut + "] -> " + (d.cevap || "(boş)"));
+    });
     (r.notlar || []).forEach(function (n) { s.push("not: " + n); });
     return s.join("\n");
   }
@@ -105,6 +108,11 @@
       p15 += kutu(f.ad + "  ·  yol " + f.yol + "  ·  " + f.uzunluk + " bayt", f.hex);
     });
     h += bolum("PKCS#15", p15);
+
+    var den = (r.denemeler || []).map(function (d) {
+      return kutu(d.ad + "  ·  " + d.komut, d.cevap || "(boş)");
+    }).join("");
+    if (den) h += bolum("Ham denemeler", den);
 
     if ((r.notlar || []).length) {
       h += bolum("Notlar", r.notlar.map(function (n) {

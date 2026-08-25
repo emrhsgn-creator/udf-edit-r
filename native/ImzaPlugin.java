@@ -139,6 +139,8 @@ public class ImzaPlugin extends Plugin {
                     r.put("atr", Ccid.hex(atr));
                     r.put("protokol", ccid.protokolSec(atr));
 
+                    r.put("denemeler", denemeler(ccid));
+
                     Akis kart = new Akis(ccid);
 
                     /* Buradan sonrası kartla konuşmak. Bir yerde takılırsak
@@ -211,6 +213,58 @@ public class ImzaPlugin extends Plugin {
                 }
             }
         }).start();
+    }
+
+    /* Kartın komutlarımıza ne dediğini olduğu gibi gösterir.
+
+       Yorum yapmadan ham cevabı raporluyoruz: hangi SELECT biçimini kabul
+       ettiğini, hangi durum kodunu döndürdüğünü buradan okuyacağız. Bu
+       komutların hiçbiri PIN denemesi değil, kart kilitlenmez. */
+    private static final byte[] AID15 = {
+        (byte) 0xA0, 0x00, 0x00, 0x00, 0x63, 0x50, 0x4B, 0x43, 0x53, 0x2D, 0x31, 0x35
+    };
+
+    private static JSArray denemeler(Ccid ccid) {
+        String[] adlar = {
+            "MF seç (A4 00 0C)",
+            "MF seç (A4 00 00 + Le)",
+            "PKCS#15 AID (A4 04 0C)",
+            "PKCS#15 AID (A4 04 00 + Le)",
+            "Öntanımlı uygulama (A4 04 00, boş AID)",
+            "EF(DIR) seç (A4 02 0C)",
+            "EF(DIR) seç (A4 08 0C)",
+            "Seçili dosyayı oku (B0)",
+            "5015 dizini (A4 00 0C)",
+            "GET DATA 06 (seri)",
+            "AKİS dizin (80 18)"
+        };
+        byte[][] apdular = {
+            {0x00, (byte) 0xA4, 0x00, 0x0C, 0x02, 0x3F, 0x00},
+            {0x00, (byte) 0xA4, 0x00, 0x00, 0x02, 0x3F, 0x00, 0x00},
+            Akis.selectApdu(0x04, 0x0C, AID15),
+            Akis.selectApdu(0x04, 0x00, AID15),
+            {0x00, (byte) 0xA4, 0x04, 0x00, 0x00},
+            {0x00, (byte) 0xA4, 0x02, 0x0C, 0x02, 0x2F, 0x00},
+            {0x00, (byte) 0xA4, 0x08, 0x0C, 0x02, 0x2F, 0x00},
+            {0x00, (byte) 0xB0, 0x00, 0x00, 0x00},
+            {0x00, (byte) 0xA4, 0x00, 0x0C, 0x02, 0x50, 0x15},
+            {0x00, (byte) 0xCA, 0x01, 0x06, 0x4D},
+            {(byte) 0x80, 0x18, 0x00, 0x00, 0x00}
+        };
+
+        JSArray liste = new JSArray();
+        for (int i = 0; i < adlar.length; i++) {
+            JSObject o = new JSObject();
+            o.put("ad", adlar[i]);
+            o.put("komut", Ccid.hex(apdular[i]));
+            try {
+                o.put("cevap", ozet(ccid.transmit(apdular[i])));
+            } catch (Exception e) {
+                o.put("cevap", "hata: " + e.getMessage());
+            }
+            liste.put(o);
+        }
+        return liste;
     }
 
     /* Dökümler ekrana sığsın diye ilk 512 baytla sınırlı. */

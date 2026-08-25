@@ -58,21 +58,33 @@ public class Akis {
         return new R(d, sw);
     }
 
+    /* SELECT APDU'su kurar.
+
+       P2 = 0x00 kart FCI döndürsün demek (Le gerekiyor), P2 = 0x0C ise
+       "hiçbir şey döndürme" (Le yok). Eski kartlar 0x00 ile çalışıyor,
+       yeni kartların çoğu 0x0C bekliyor — ikisini de deniyoruz. */
+    public static byte[] selectApdu(int p1, int p2, byte[] data) {
+        boolean le = (p2 == 0x00);
+        byte[] apdu = new byte[(le ? 6 : 5) + data.length];
+        apdu[0] = 0x00;
+        apdu[1] = (byte) 0xA4;
+        apdu[2] = (byte) p1;
+        apdu[3] = (byte) p2;
+        apdu[4] = (byte) data.length;
+        System.arraycopy(data, 0, apdu, 5, data.length);
+        if (le) apdu[apdu.length - 1] = 0x00;
+        return apdu;
+    }
+
     /* AKİS'te seçme kipi yol uzunluğuna göre değişiyor ve kartlar arasında
-       oynuyor; OpenSC de sırayla deniyor. */
+       oynuyor; OpenSC de sırayla deniyor. Biz ayrıca P2'yi de deniyoruz.
+       SELECT hiçbir deneme hakkı tüketmiyor, güvenli. */
     public boolean select(byte[] path) throws Exception {
-        int[] modes = (path.length == 2) ? new int[]{0x00, 0x02, 0x08} : new int[]{0x08, 0x02, 0x00};
-        for (int m : modes) {
-            byte[] apdu = new byte[6 + path.length];
-            apdu[0] = 0x00;
-            apdu[1] = (byte) 0xA4;
-            apdu[2] = (byte) m;
-            apdu[3] = 0x00;
-            apdu[4] = (byte) path.length;
-            System.arraycopy(path, 0, apdu, 5, path.length);
-            apdu[apdu.length - 1] = 0x00;                 // Le
-            if (send(apdu).ok()) return true;
-        }
+        int[] p1ler = (path.length == 2) ? new int[]{0x00, 0x02, 0x08} : new int[]{0x08, 0x02, 0x00};
+        int[] p2ler = {0x0C, 0x00};
+        for (int p1 : p1ler)
+            for (int p2 : p2ler)
+                if (send(selectApdu(p1, p2, path)).ok()) return true;
         return false;
     }
 
@@ -83,15 +95,8 @@ public class Akis {
     /* Uygulamayı adına (AID) göre seçer -- P1=04. PKCS#15 dizinine girmenin
        yol bilmeye gerek bırakmayan yolu. */
     public boolean selectAid(byte[] aid) throws Exception {
-        byte[] apdu = new byte[6 + aid.length];
-        apdu[0] = 0x00;
-        apdu[1] = (byte) 0xA4;
-        apdu[2] = 0x04;
-        apdu[3] = 0x00;
-        apdu[4] = (byte) aid.length;
-        System.arraycopy(aid, 0, apdu, 5, aid.length);
-        apdu[apdu.length - 1] = 0x00;
-        return send(apdu).ok();
+        return send(selectApdu(0x04, 0x0C, aid)).ok()
+            || send(selectApdu(0x04, 0x00, aid)).ok();
     }
 
     /* Seçili dosyayı baştan sona okur. Dosya boyunu bilmiyoruz; kart
