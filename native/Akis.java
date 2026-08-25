@@ -221,50 +221,104 @@ public class Akis {
        rapora yazılıp belgelensin diye. */
     public String sonBicim = "";
 
+    /* PKCS#1 v1.5 imza bloğu: 00 01 FF…FF 00 || DigestInfo, anahtar boyunda.
+       Kart "ham RSA" bekliyorsa dolguyu bizim yapmamız gerekiyor. */
+    private static byte[] pkcs1Blok(byte[] digestInfo, int boy) throws Exception {
+        if (digestInfo.length + 11 > boy) throw new Exception("PKCS#1 bloğu sığmıyor.");
+        byte[] b = new byte[boy];
+        b[0] = 0x00;
+        b[1] = 0x01;
+        int dolgu = boy - digestInfo.length - 3;
+        for (int i = 0; i < dolgu; i++) b[2 + i] = (byte) 0xFF;
+        b[2 + dolgu] = 0x00;
+        System.arraycopy(digestInfo, 0, b, 3 + dolgu, digestInfo.length);
+        return b;
+    }
+
+    /* PSO: HASH — özeti önce karta yükleyen kartlar için. */
+    private R psoHash(byte[] veri) throws Exception {
+        byte[] apdu = new byte[5 + veri.length];
+        apdu[0] = 0x00;
+        apdu[1] = 0x2A;
+        apdu[2] = (byte) 0x90;
+        apdu[3] = (byte) 0xA0;
+        apdu[4] = (byte) veri.length;
+        System.arraycopy(veri, 0, apdu, 5, veri.length);
+        return send(apdu);
+    }
+
     /* PSO: COMPUTE DIGITAL SIGNATURE. Asıl imza kartın içinde atılıyor;
        özel anahtar kartı hiç terk etmiyor.
 
-       Kartların bir kısmı hazır DigestInfo bekler, bir kısmı çıplak özeti
-       alıp DigestInfo'yu kendisi sarar; algoritma göstergesi de değişir.
-       Hangisini istediğini belgeleyen bir kaynak yok, o yüzden sırayla
-       deniyoruz. PIN bir kez doğrulandıktan sonra bu denemeler deneme
-       hakkı tüketmiyor — 6A80 "veri beğenilmedi" demek, "PIN yanlış" değil. */
+       Kartın hangi veri biçimini istediğini belgeleyen bir kaynak yok:
+       kimi hazır DigestInfo bekler, kimi çıplak özeti alıp sarmalamayı
+       kendi yapar, kimi dolgulu ham bloğu ister, kimi de özeti önce
+       PSO: HASH ile yükletir. Sırayla deniyoruz.
+
+       PIN bir kez doğrulandıktan sonra bu denemeler deneme hakkı
+       tüketmiyor: 6A80 "veri beğenilmedi" demek, "PIN yanlış" değil.
+       Le zorunlu — Le'siz gönderim 6700 veriyor. */
     public byte[] imzala(int anahtarRef, byte[] digestInfo) throws Exception {
-        byte[] hamOzet = new byte[32];
-        System.arraycopy(digestInfo, digestInfo.length - 32, hamOzet, 0, 32);
+        byte[] ham = new byte[32];
+        System.arraycopy(digestInfo, digestInfo.length - 32, ham, 0, 32);
+        byte[] blok = pkcs1Blok(digestInfo, 256);
 
-        byte[] mseAlg02 = {(byte) 0x84, 0x01, (byte) anahtarRef, (byte) 0x80, 0x01, 0x02};
-        byte[] mseAlg12 = {(byte) 0x84, 0x01, (byte) anahtarRef, (byte) 0x80, 0x01, 0x12};
-        byte[] mseYalin = {(byte) 0x84, 0x01, (byte) anahtarRef};
+        byte[][] mseler   = {
+            {(byte) 0x84, 0x01, (byte) anahtarRef, (byte) 0x80, 0x01, 0x02},
+            {(byte) 0x84, 0x01, (byte) anahtarRef},
+            {(byte) 0x84, 0x01, (byte) anahtarRef, (byte) 0x80, 0x01, 0x12}
+        };
+        String[] mseAdlar = {"alg 02", "yalın", "alg 12"};
 
-        byte[][] mseler   = {mseAlg02, mseAlg02, mseYalin, mseYalin, mseAlg12, mseAlg12, mseAlg02, mseYalin};
-        String[] mseAdlar = {"alg 02", "alg 02", "yalın",  "yalın",  "alg 12", "alg 12", "alg 02", "yalın"};
-        byte[][] veriler  = {hamOzet,  digestInfo, digestInfo, hamOzet, hamOzet, digestInfo, hamOzet, digestInfo};
-        String[] veriAd   = {"çıplak özet", "DigestInfo", "DigestInfo", "çıplak özet",
-                             "çıplak özet", "DigestInfo", "çıplak özet", "DigestInfo"};
-        boolean[] leler   = {true, true, true, true, true, true, false, false};
+        byte[][] veriler  = {digestInfo, ham, blok};
+        String[] veriAd   = {"DigestInfo", "çıplak özet", "PKCS#1 blok"};
 
         StringBuilder gunluk = new StringBuilder();
-        for (int i = 0; i < mseler.length; i++) {
-            /* Başarısız bir PSO güvenlik ortamını düşürebiliyor; her
-               denemeden önce anahtarı yeniden seçiyoruz. */
-            if (!guvenlikOrtami(mseler[i])) {
-                ekle(gunluk, mseAdlar[i] + " + " + veriAd[i] + ": anahtar seçilemedi");
-                continue;
+
+        for (int m = 0; m < mseler.length; m++) {
+            for (int v = 0; v < veriler.length; v++) {
+                /* Başarısız bir PSO güvenlik ortamını düşürebiliyor;
+                   her denemeden önce anahtarı yeniden seçiyoruz. */
+                if (!guvenlikOrtami(mseler[m])) {
+                    ekle(gunluk, mseAdlar[m] + ": anahtar seçilemedi");
+                    break;
+                }
+                R r = pso(veriler[v], true);
+                if (r.ok() && r.data.length > 0) {
+                    sonBicim = mseAdlar[m] + " + " + veriAd[v];
+                    return r.data;
+                }
+                if (r.sw == 0x6982) throw new Exception(
+                        "Kart PIN doğrulamasını düşürdü (6982). Denenenler: " + gunluk);
+                ekle(gunluk, mseAdlar[m] + " + " + veriAd[v] + ": " + r.swHex());
             }
-            R r = pso(veriler[i], leler[i]);
-            if (r.ok() && r.data.length > 0) {
-                sonBicim = mseAdlar[i] + " + " + veriAd[i] + (leler[i] ? " + Le" : "");
-                return r.data;
+
+            /* Özeti önce yükletip sonra boş CDS isteyen kartlar. */
+            byte[][] hashVeri = {ham, birlestir(new byte[]{(byte) 0x90, 0x20}, ham)};
+            String[] hashAd   = {"çıplak", "90-TLV"};
+            for (int k = 0; k < hashVeri.length; k++) {
+                if (!guvenlikOrtami(mseler[m])) break;
+                R h = psoHash(hashVeri[k]);
+                if (!h.ok()) {
+                    ekle(gunluk, mseAdlar[m] + " + PSO:HASH " + hashAd[k] + ": " + h.swHex());
+                    continue;
+                }
+                R r = pso(new byte[0], true);
+                if (r.ok() && r.data.length > 0) {
+                    sonBicim = mseAdlar[m] + " + PSO:HASH " + hashAd[k];
+                    return r.data;
+                }
+                ekle(gunluk, mseAdlar[m] + " + PSO:HASH " + hashAd[k] + " -> CDS: " + r.swHex());
             }
-            if (r.sw == 0x6982) {
-                throw new Exception("Kart PIN doğrulamasını düşürdü (6982). "
-                        + "Denenen biçimler: " + gunluk);
-            }
-            ekle(gunluk, mseAdlar[i] + " + " + veriAd[i]
-                    + (leler[i] ? " + Le" : "") + ": " + r.swHex());
         }
         throw new Exception("Kart hiçbir imza biçimini kabul etmedi. " + gunluk);
+    }
+
+    private static byte[] birlestir(byte[] a, byte[] b) {
+        byte[] c = new byte[a.length + b.length];
+        System.arraycopy(a, 0, c, 0, a.length);
+        System.arraycopy(b, 0, c, a.length, b.length);
+        return c;
     }
 
     private static void ekle(StringBuilder b, String s) {

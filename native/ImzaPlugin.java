@@ -113,7 +113,7 @@ public class ImzaPlugin extends Plugin {
                     Pkcs15.Sonuc s = Pkcs15.gez(kart, false);
                     if (s.sertifikaDer.isEmpty()) throw new Exception("Kartta sertifika bulunamadı.");
                     byte[] sertifika = s.sertifikaDer.get(0);
-                    final int anahtarRef = s.anahtarRef.isEmpty() ? 1 : s.anahtarRef.get(0);
+                    int anahtarRef = s.anahtarRef.isEmpty() ? 1 : s.anahtarRef.get(0);
 
                     int pinRef = kart.pinRefBul();
                     if (pinRef < 0) throw new Exception("Kartta PIN nesnesi bulunamadı.");
@@ -127,18 +127,43 @@ public class ImzaPlugin extends Plugin {
                         throw new Exception(String.format("PIN kabul edilmedi (%04X).", sw));
                     }
 
-                    byte[] sgn = Cms.uret(icerik, sertifika, new java.util.Date(),
-                        new Cms.Imzalayici() {
-                            @Override
-                            public byte[] imzala(byte[] digestInfo) throws Exception {
-                                return kart.imzala(anahtarRef, digestInfo);
-                            }
-                        });
+                    /* PrKDF PIN'siz okunamıyordu; artık okunabilir. Özel anahtarın
+                       gerçek referansı burada yazılı — PuKDF'teki değer açık
+                       anahtara ait olabilir, tahmin etmek yerine buradan alıyoruz. */
+                    byte[] prkdf = null;
+                    try {
+                        kart.selectAid(Pkcs15.AID_KISA);
+                        prkdf = kart.readFile(new byte[]{0x2F, 0x01});
+                    } catch (Exception yok) { /* okunamadıysa PuKDF'teki değerle devam */ }
+                    final String prkdfHex = ozet(prkdf);
+                    if (prkdf != null && prkdf.length > 0) {
+                        java.util.List<Integer> refler = Pkcs15.integers(prkdf, 1);
+                        if (!refler.isEmpty()) anahtarRef = refler.get(refler.size() - 1);
+                    }
+                    final int ref = anahtarRef;
+
+                    byte[] sgn;
+                    try {
+                        sgn = Cms.uret(icerik, sertifika, new java.util.Date(),
+                            new Cms.Imzalayici() {
+                                @Override
+                                public byte[] imzala(byte[] digestInfo) throws Exception {
+                                    return kart.imzala(ref, digestInfo);
+                                }
+                            });
+                    } catch (Exception e) {
+                        /* PrKDF dökümünü hataya iliştiriyoruz: kartın ne istediği
+                           bir sonraki turda buradan çıkacak. */
+                        throw new Exception(e.getMessage()
+                                + "  ||  anahtar ref: " + ref
+                                + "  ||  PrKDF: " + (prkdfHex.isEmpty() ? "okunamadı" : prkdfHex));
+                    }
 
                     JSObject r = new JSObject();
                     r.put("udf", Base64.encodeToString(sgnEkle(udf, sgn), Base64.NO_WRAP));
                     r.put("imza", sgn.length);
                     r.put("bicim", kart.sonBicim);
+                    r.put("anahtarRef", ref);
                     call.resolve(r);
                 } catch (Exception e) {
                     String m = e.getMessage();

@@ -292,7 +292,8 @@
       await Dosya.farkliKaydet({ ad: ad, veri: sonuc.udf });
       showNotice('<span class="mk">✓</span><span><b>' + esc(ad) + '</b> imzalandı ve kaydedildi.' +
         "<br>İmza " + sonuc.imza + " bayt" +
-        (sonuc.bicim ? " · biçim: " + esc(sonuc.bicim) : "") + ".</span>");
+        (sonuc.bicim ? " · biçim: " + esc(sonuc.bicim) : "") +
+        (sonuc.anahtarRef !== undefined ? " · anahtar " + sonuc.anahtarRef : "") + ".</span>");
       setTimeout(hideNotice, 5000);
     } catch (e) {
       if (String(e && e.message) === "iptal") { hideNotice(); return; }
