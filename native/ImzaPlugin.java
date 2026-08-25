@@ -220,36 +220,28 @@ public class ImzaPlugin extends Plugin {
        Yorum yapmadan ham cevabı raporluyoruz: hangi SELECT biçimini kabul
        ettiğini, hangi durum kodunu döndürdüğünü buradan okuyacağız. Bu
        komutların hiçbiri PIN denemesi değil, kart kilitlenmez. */
-    private static final byte[] AID15 = {
-        (byte) 0xA0, 0x00, 0x00, 0x00, 0x63, 0x50, 0x4B, 0x43, 0x53, 0x2D, 0x31, 0x35
-    };
-
     private static JSArray denemeler(Ccid ccid) {
+        /* Sıra önemli: kart seçimi durum taşıyor, sonraki komut bir
+           öncekinin bıraktığı dizinde çalışıyor. */
         String[] adlar = {
-            "MF seç (A4 00 0C)",
-            "MF seç (A4 00 00 + Le)",
-            "PKCS#15 AID (A4 04 0C)",
-            "PKCS#15 AID (A4 04 00 + Le)",
+            "MF seç (A4 00 0C 3F00)",
             "Öntanımlı uygulama (A4 04 00, boş AID)",
-            "EF(DIR) seç (A4 02 0C)",
-            "EF(DIR) seç (A4 08 0C)",
-            "Seçili dosyayı oku (B0)",
-            "5015 dizini (A4 00 0C)",
-            "GET DATA 06 (seri)",
-            "AKİS dizin (80 18)"
+            "DF adı \"PKCS-15\" (A4 04 0C)",
+            "ODF seç (A4 02 0C 5031)",
+            "ODF oku (B0)",
+            "TokenInfo seç (A4 02 0C 5032)",
+            "TokenInfo oku (B0)",
+            "Seri numarası (CA 01 06, Le=20)"
         };
         byte[][] apdular = {
             {0x00, (byte) 0xA4, 0x00, 0x0C, 0x02, 0x3F, 0x00},
-            {0x00, (byte) 0xA4, 0x00, 0x00, 0x02, 0x3F, 0x00, 0x00},
-            Akis.selectApdu(0x04, 0x0C, AID15),
-            Akis.selectApdu(0x04, 0x00, AID15),
             {0x00, (byte) 0xA4, 0x04, 0x00, 0x00},
-            {0x00, (byte) 0xA4, 0x02, 0x0C, 0x02, 0x2F, 0x00},
-            {0x00, (byte) 0xA4, 0x08, 0x0C, 0x02, 0x2F, 0x00},
+            Akis.selectApdu(0x04, 0x0C, Pkcs15.AID_KISA),
+            {0x00, (byte) 0xA4, 0x02, 0x0C, 0x02, 0x50, 0x31},
             {0x00, (byte) 0xB0, 0x00, 0x00, 0x00},
-            {0x00, (byte) 0xA4, 0x00, 0x0C, 0x02, 0x50, 0x15},
-            {0x00, (byte) 0xCA, 0x01, 0x06, 0x4D},
-            {(byte) 0x80, 0x18, 0x00, 0x00, 0x00}
+            {0x00, (byte) 0xA4, 0x02, 0x0C, 0x02, 0x50, 0x32},
+            {0x00, (byte) 0xB0, 0x00, 0x00, 0x00},
+            {0x00, (byte) 0xCA, 0x01, 0x06, 0x20}
         };
 
         JSArray liste = new JSArray();

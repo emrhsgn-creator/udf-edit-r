@@ -19,9 +19,15 @@ import java.util.List;
    katmanı yazılacak, o yüzden yorum yanlışsa dökümden görülebilsin. */
 public class Pkcs15 {
 
-    /* PKCS#15 uygulamasının standart AID'i ("...PKCS-15") */
-    public static final byte[] AID = {
+    /* PKCS#15 uygulamasının standart AID'i */
+    public static final byte[] AID_UZUN = {
         (byte) 0xA0, 0x00, 0x00, 0x00, 0x63,
+        0x50, 0x4B, 0x43, 0x53, 0x2D, 0x31, 0x35
+    };
+
+    /* TÜRKTRUST/AKİS kartında dizinin adı düpedüz "PKCS-15" metni; kartın
+       kendi FCI'si böyle bildiriyor (84 07 50 4B 43 53 2D 31 35). */
+    public static final byte[] AID_KISA = {
         0x50, 0x4B, 0x43, 0x53, 0x2D, 0x31, 0x35
     };
 
@@ -177,30 +183,30 @@ public class Pkcs15 {
 
         kart.selectId(0x3F00);
 
+        /* EF(DIR) her kartta yok — TÜRKTRUST/AKİS kartında bulunmuyor.
+           Varsa yolu oradan alıyoruz, yoksa sorun değil. */
         s.efDir = kart.readFile(new byte[]{0x2F, 0x00});
-        if (s.efDir == null || s.efDir.length == 0) s.notlar.add("EF(DIR) okunamadı.");
+        if (s.efDir == null || s.efDir.length == 0) s.notlar.add("Kartta EF(DIR) yok.");
 
-        /* PKCS#15 uygulamasına gir: önce EF(DIR)'deki yol, olmazsa AID ile
-           ada göre seçme, olmazsa geleneksel 5015. */
-        boolean girdi = false;
-        if (s.efDir != null) {
+        /* PKCS#15 dizinine girmenin yolları, işe yarama olasılığına göre.
+           Kart FCI'sinde dizinin adını "PKCS-15" diye bildiriyor; standart
+           12 baytlık AID bu kartta 6A 82 (dosya yok) veriyor. */
+        String nasil = null;
+        if (s.efDir != null && s.efDir.length > 0) {
             byte[] yol = firstPath(s.efDir);
             if (yol != null) {
                 kart.selectId(0x3F00);
-                girdi = kart.select(yol);
-                if (girdi) s.notlar.add("PKCS#15 dizinine EF(DIR)'deki yolla girildi: " + Ccid.hex(yol));
+                if (kart.select(yol)) nasil = "EF(DIR)'deki yol " + Ccid.hex(yol);
             }
         }
-        if (!girdi) {
-            girdi = kart.selectAid(AID);
-            if (girdi) s.notlar.add("PKCS#15 dizinine AID ile girildi.");
-        }
-        if (!girdi) {
-            kart.selectId(0x3F00);
-            girdi = kart.selectId(0x5015);
-            if (girdi) s.notlar.add("PKCS#15 dizinine 5015 ile girildi.");
-        }
-        if (!girdi) s.notlar.add("PKCS#15 dizinine girilemedi; dosyalar taranacak.");
+        if (nasil == null && kart.selectAid(AID_KISA))     nasil = "DF adı \"PKCS-15\"";
+        if (nasil == null && kart.selectAid(AID_UZUN))     nasil = "standart 12 baytlık AID";
+        if (nasil == null && kart.selectVarsayilan())      nasil = "öntanımlı uygulama (boş AID)";
+        if (nasil == null) { kart.selectId(0x3F00); if (kart.selectId(0x3D01)) nasil = "dosya kimliği 3D01"; }
+        if (nasil == null) { kart.selectId(0x3F00); if (kart.selectId(0x5015)) nasil = "dosya kimliği 5015"; }
+
+        if (nasil != null) s.notlar.add("PKCS#15 dizinine girildi: " + nasil);
+        else s.notlar.add("PKCS#15 dizinine girilemedi.");
 
         s.odf = kart.readFile(new byte[]{0x50, 0x31});
         if (s.odf == null || s.odf.length == 0) {
@@ -234,7 +240,8 @@ public class Pkcs15 {
         }
 
         /* Hiç sertifika bulunamadıysa kartın dizinini tarayıp okunabilen her
-           dosyayı sertifika sanıp deniyoruz. Yavaş ama tanıda işe yarıyor. */
+           dosyayı sertifika sanıp deniyoruz. Bu kartta 80 18 desteklenmiyor
+           (6D 00), o zaman liste boş döner ve tarama atlanır. */
         if (s.sertifikalar.isEmpty()) {
             List<Integer> ids = kart.listFiles();
             if (!ids.isEmpty()) s.notlar.add("Dizin taraması: " + ids.size() + " dosya.");

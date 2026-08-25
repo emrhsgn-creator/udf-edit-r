@@ -99,6 +99,12 @@ public class Akis {
             || send(selectApdu(0x04, 0x00, aid)).ok();
     }
 
+    /* Boş AID ile seçim: kart öntanımlı uygulamasını açar. TÜRKTRUST/AKİS
+       kartında bu doğrudan PKCS#15 dizinine düşüyor. */
+    public boolean selectVarsayilan() throws Exception {
+        return send(new byte[]{0x00, (byte) 0xA4, 0x04, 0x00, 0x00}).ok();
+    }
+
     /* Seçili dosyayı baştan sona okur. Dosya boyunu bilmiyoruz; kart
        "dosya sonu" diyene kadar 255'er bayt istiyoruz. */
     public byte[] readBinary() throws Exception {
@@ -133,13 +139,12 @@ public class Akis {
         return ids;
     }
 
-    /* Kart seri numarası. OpenSC dataid=6 ile 77 bayt okuyup 55. bayttan
-       itibaren 12 baytı seri numarası sayıyor. */
+    /* Kart seri numarası. OpenSC eski AKİS'te 77 bayt okuyup 55. bayttan
+       itibaren 12 baytı alıyordu; yeni kartlar daha kısa yanıt veriyor
+       (6C 20 ile "32 bayt iste" diyorlar). Yorumlamak yerine ne verirse
+       onu döndürüyoruz — send() zaten doğru uzunlukla tekrar deniyor. */
     public byte[] serial() throws Exception {
-        R r = send(new byte[]{0x00, (byte) 0xCA, 0x01, 0x06, 0x4D});
-        if (!r.ok() || r.data.length < 67) return null;
-        byte[] s = new byte[12];
-        System.arraycopy(r.data, 55, s, 0, 12);
-        return s;
+        R r = send(new byte[]{0x00, (byte) 0xCA, 0x01, 0x06, 0x00});
+        return r.ok() && r.data.length > 0 ? r.data : null;
     }
 }
