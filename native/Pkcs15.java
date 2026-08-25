@@ -105,15 +105,17 @@ public class Pkcs15 {
         return null;
     }
 
-    public static List<Integer> integers(byte[] v) {
+    /* Anahtar referansı tek baytlık bir INTEGER; modül uzunluğu (2048) iki
+       bayt olduğu için uzunluğu sınırlayarak onu dışarıda bırakıyoruz. */
+    public static List<Integer> integers(byte[] v, int enFazlaBayt) {
         List<Integer> out = new ArrayList<>();
         for (Der d : children(v)) {
-            if (!d.cons && d.tag == 0x02 && d.value.length >= 1 && d.value.length <= 2) {
+            if (!d.cons && d.tag == 0x02 && d.value.length >= 1 && d.value.length <= enFazlaBayt) {
                 int n = 0;
                 for (byte x : d.value) n = (n << 8) | (x & 0xFF);
                 out.add(n);
             } else if (d.cons) {
-                out.addAll(integers(d.value));
+                out.addAll(integers(d.value, enFazlaBayt));
             }
         }
         return out;
@@ -225,8 +227,11 @@ public class Pkcs15 {
 
                 if (f.icerik == null || f.icerik.length == 0) continue;
 
-                if (e.tagNum == 0) s.anahtarRef.addAll(integers(f.icerik));
-                if (e.tagNum == 8) s.pinRef.addAll(integers(f.icerik));
+                /* PrKDF PIN korumalı olabiliyor (bu kartta boş dönüyor);
+                   PuKDF aynı anahtarı aynı referansla tarif ettiği için
+                   oradan da topluyoruz. */
+                if (e.tagNum == 0 || e.tagNum == 1) s.anahtarRef.addAll(integers(f.icerik, 1));
+                if (e.tagNum == 8) s.pinRef.addAll(integers(f.icerik, 1));
                 if (e.tagNum == 4 || e.tagNum == 5 || e.tagNum == 6) {
                     for (Der kayit : children(f.icerik)) {
                         byte[] cy = firstPath(kayit.value);
@@ -251,6 +256,22 @@ public class Pkcs15 {
                 X509Certificate c = parseCert(der);
                 if (c != null) { s.sertifikalar.add(c); s.sertifikaDer.add(der); }
             }
+        }
+
+        /* Kartta AODF yoksa PIN referansı yazılı değil; olağan referansları
+           deneme hakkını sorarak tarıyoruz. Bu sorgu PIN göndermiyor,
+           hiçbir hakkı eksiltmiyor. */
+        if (s.pinRef.isEmpty()) {
+            int[] adaylar = {0x01, 0x81, 0x02, 0x82, 0x00, 0x83, 0x03};
+            for (int ref : adaylar) {
+                int kalan;
+                try { kalan = kart.pinKalan(ref); } catch (Exception e) { continue; }
+                if (kalan < 0) continue;
+                s.pinRef.add(ref);
+                s.notlar.add(String.format("PIN referansı %02X — kalan deneme: %s",
+                        ref, kalan == 0 ? "bloke" : String.valueOf(kalan)));
+            }
+            if (s.pinRef.isEmpty()) s.notlar.add("Kart hiçbir PIN referansını tanımadı.");
         }
 
         return s;

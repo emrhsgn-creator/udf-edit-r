@@ -229,8 +229,12 @@ public class ImzaPlugin extends Plugin {
             "DF adı \"PKCS-15\" (A4 04 0C)",
             "ODF seç (A4 02 0C 5031)",
             "ODF oku (B0)",
-            "TokenInfo seç (A4 02 0C 5032)",
-            "TokenInfo oku (B0)",
+            "PrKDF seç (A4 02 0C 2F01)",
+            "PrKDF oku (B0)",
+            "Sertifika dosyası seç (A4 02 0C 2F10)",
+            "Güvenlik ortamı, standart (22 41 B6 + TLV)",
+            "Güvenlik ortamı, yalnız anahtar (22 41 B6 84)",
+            "Güvenlik ortamı, AKİS biçimi (22 C3 01)",
             "Seri numarası (CA 01 06, Le=20)"
         };
         byte[][] apdular = {
@@ -239,8 +243,12 @@ public class ImzaPlugin extends Plugin {
             Akis.selectApdu(0x04, 0x0C, Pkcs15.AID_KISA),
             {0x00, (byte) 0xA4, 0x02, 0x0C, 0x02, 0x50, 0x31},
             {0x00, (byte) 0xB0, 0x00, 0x00, 0x00},
-            {0x00, (byte) 0xA4, 0x02, 0x0C, 0x02, 0x50, 0x32},
+            {0x00, (byte) 0xA4, 0x02, 0x0C, 0x02, 0x2F, 0x01},
             {0x00, (byte) 0xB0, 0x00, 0x00, 0x00},
+            {0x00, (byte) 0xA4, 0x02, 0x0C, 0x02, 0x2F, 0x10},
+            {0x00, 0x22, 0x41, (byte) 0xB6, 0x06, (byte) 0x84, 0x01, 0x01, (byte) 0x80, 0x01, 0x02},
+            {0x00, 0x22, 0x41, (byte) 0xB6, 0x03, (byte) 0x84, 0x01, 0x01},
+            {0x00, 0x22, (byte) 0xC3, 0x01},
             {0x00, (byte) 0xCA, 0x01, 0x06, 0x20}
         };
 

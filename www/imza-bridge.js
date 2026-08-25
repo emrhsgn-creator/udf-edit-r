@@ -101,7 +101,9 @@
 
     var p15 = "";
     if ((r.anahtarRef || []).length) p15 += alan("Anahtar referansları", r.anahtarRef.join(", "));
-    if ((r.pinRef || []).length) p15 += alan("PIN referansları", r.pinRef.join(", "));
+    if ((r.pinRef || []).length) p15 += alan("PIN referansları", r.pinRef.map(function (v) {
+      return "0x" + ("0" + v.toString(16).toUpperCase()).slice(-2);
+    }).join(", "));
     p15 += kutu("EF(DIR) 2F00", r.efDir);
     p15 += kutu("ODF 5031", r.odf);
     (r.dosyalar || []).forEach(function (f) {

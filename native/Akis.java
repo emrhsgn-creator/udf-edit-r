@@ -124,6 +124,21 @@ public class Akis {
         return select(path) ? readBinary() : null;
     }
 
+    /* PIN'in kalan deneme hakkını sorar — PIN GÖNDERMEDEN.
+
+       Veri alanı olmayan VERIFY (ISO 7816-4), kartın sayacını okumanın
+       standart yolu: kart 63 CX ile X hak kaldığını söyler, hak eksilmez.
+       Kartta AODF olmadığı için PIN referansını böyle buluyoruz.
+
+       Dönüş: kalan hak, 0 = bloke, -1 = böyle bir PIN yok. */
+    public int pinKalan(int ref) throws Exception {
+        R r = send(new byte[]{0x00, 0x20, 0x00, (byte) ref});
+        if (r.sw == 0x9000) return 9;                       // zaten doğrulanmış
+        if ((r.sw & 0xFFF0) == 0x63C0) return r.sw & 0x0F;
+        if (r.sw == 0x6983) return 0;                       // bloke
+        return -1;
+    }
+
     /* AKİS'e özgü dizin komutu: 20 baytlık kayıtlar, her kaydın 2. ve 3.
        baytı dosya kimliği. */
     public List<Integer> listFiles() throws Exception {
