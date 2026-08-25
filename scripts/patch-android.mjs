@@ -3,9 +3,11 @@
      2) YazdirPlugin — WebView window.print() desteklemediği için PrintManager
      3) DosyaPlugin  — Android 11+ ortak klasörlere yazmaya izin vermiyor (EACCES),
                        bu yüzden kaydetme Storage Access Framework üzerinden
+     4) ImzaPlugin   — USB'ye takılı e-imza token'ı (CCID + AKİS); kaynakları
+                       native/ klasöründe, buraya gömülemeyecek kadar uzun
    android/ klasörü her derlemede sıfırdan üretildiği için bu betik her seferinde
    çalışır ve tekrar çalıştırıldığında hiçbir şeyi bozmaz. */
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, readdirSync } from "node:fs";
 
 const appId = JSON.parse(readFileSync("capacitor.config.json", "utf8")).appId;
 const javaDir = "android/app/src/main/java/" + appId.replace(/\./g, "/");
@@ -54,6 +56,45 @@ if (xml.includes("UDF_FILE_ASSOCIATION")) {
   xml = xml.replace(LAUNCHER, LAUNCHER + FILTERS);
   writeFileSync(MANIFEST, xml);
   console.log("Manifest yamalandı: .udf dosya ilişkilendirmesi eklendi.");
+}
+
+/* USB token: uygulamanın USB Host kullanabilmesi ve okuyucu takılınca
+   önerilmesi için. device_filter.xml arayüz sınıfı 0x0B (CCID) ile eşleşir;
+   token'ın satıcı/ürün kimliğini bilmemize gerek kalmıyor. */
+if (xml.includes("USB_TOKEN")) {
+  console.log("Manifest zaten USB token için yamalı.");
+} else {
+  const USB = `
+            <!-- USB_TOKEN -->
+            <intent-filter>
+                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
+                android:resource="@xml/device_filter" />
+`;
+  const LAUNCHER = `                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+`;
+  if (!xml.includes(LAUNCHER)) {
+    console.error("HATA: manifest'te LAUNCHER intent-filter bulunamadı.");
+    process.exit(1);
+  }
+  xml = xml.replace(LAUNCHER, LAUNCHER + USB);
+  xml = xml.replace("</manifest>",
+    `    <uses-feature android:name="android.hardware.usb.host" android:required="false" />
+</manifest>`);
+  writeFileSync(MANIFEST, xml);
+
+  mkdirSync("android/app/src/main/res/xml", { recursive: true });
+  writeFileSync("android/app/src/main/res/xml/device_filter.xml",
+`<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Akıllı kart okuyucular: USB sınıfı 0x0B (CCID) -->
+    <usb-device class="11" />
+</resources>
+`);
+  console.log("Manifest yamalandı: USB token desteği eklendi.");
 }
 
 /* ---------------- 2) Java eklentileri ---------------- */
@@ -186,9 +227,19 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(YazdirPlugin.class);
         registerPlugin(DosyaPlugin.class);
+        registerPlugin(ImzaPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }
 `);
 
-console.log("Java eklentileri yazıldı: YazdirPlugin, DosyaPlugin.");
+/* native/ altındaki kaynaklar olduğu gibi kopyalanır; yalnızca paket adı
+   yerine oturtulur. CCID ve PKCS#15 katmanları bir JS şablon dizesine
+   sığdırılamayacak kadar uzun ve okunması gereken kod. */
+const native = readdirSync("native").filter(f => f.endsWith(".java"));
+for (const f of native) {
+  writeFileSync(javaDir + "/" + f,
+    readFileSync("native/" + f, "utf8").replace("package __PACKAGE__;", `package ${appId};`));
+}
+
+console.log("Java eklentileri yazıldı: YazdirPlugin, DosyaPlugin, " + native.join(", ") + ".");

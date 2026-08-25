@@ -150,29 +150,58 @@ Manifest'e eklenecekler (`scripts/patch-android.mjs` üretecek):
 ve `DosyaPlugin` ile aynı desen.
 
 ```
-scripts/patch-android.mjs   + Ccid.java      CCID/USB taşıma katmanı
-                            + Akis.java      APDU komutları
-                            + Pkcs15.java    kart üzerindeki nesneleri okur
-                            + Cms.java       BouncyCastle ile CAdES-BES
-                            + ImzaPlugin.java  Capacitor köprüsü
-                            + manifest yamaları, build.gradle bağımlılığı
-www/imza-bridge.js          şerit düğmesi, PIN diyaloğu, tanı ekranı
-src/shell.html              Araçlar sekmesine "E-İmzala" ve "Token Tanı"
+native/Ccid.java            CCID/USB taşıma katmanı            ✓
+native/Akis.java            AKİS APDU komutları                ✓
+native/Pkcs15.java          kart üzerindeki nesneleri okur     ✓
+native/ImzaPlugin.java      Capacitor köprüsü                  ✓
+native/Cms.java             BouncyCastle ile CAdES-BES         — sırada
+scripts/patch-android.mjs   native/*.java kopyalar, manifest    ✓
+www/imza-bridge.js          tanı ekranı (PIN diyaloğu sırada)   ✓
+src/shell.html              Araçlar → "Token tanı"              ✓
 ```
+
+`YazdirPlugin` ve `DosyaPlugin` `patch-android.mjs` içine gömülü kalmaya
+devam ediyor; kısalar. CCID ve PKCS#15 katmanları bir JS şablon dizesine
+sığdırılamayacak kadar uzun olduğu için `native/` altında ayrı dosyalar
+hâlinde duruyor, betik yalnızca paket adını yerine oturtup kopyalıyor.
 
 İmzalayıcı arayüzü sağlayıcıdan bağımsız tasarlanacak (`Token`,
 `MobilImza`, `Test`) — mobil imza sonradan eklenebilsin diye.
 
-### İlk kilometre taşı: PIN'siz tanı ekranı
+### İlk kilometre taşı: PIN'siz tanı ekranı — **yazıldı**
 
-Kartı kilitleme riski olmadan denenebilecek ilk adım. **PIN sormaz.**
+Kartı kilitleme riski olmadan denenebilecek ilk adım. **PIN sormaz**, imza
+üretmez; yalnızca okur.
 
-1. Takılı USB cihazları listele, CCID arayüzünü bul
-2. Karta güç ver, **ATR'yi ekrana bas** — kartın gerçek sürümü böyle öğrenilir
-3. PKCS#15 ağacını gez: anahtar referansları, PIN referansı, sertifika yolları
-4. Sertifikayı oku, sahibini ve geçerlilik tarihini göster
+Şerit: **Araçlar → Token tanı**. Rapor ekranda çıkar, "Raporu kopyala"
+düğmesiyle metin olarak alınabilir.
 
-Bu çalıştığı anda geri kalanı (PIN → `22 C3` → `2A 9E 9A` → CMS) düz yol.
+Yaptıkları:
+
+1. Takılı USB aygıtlarını tarar, CCID arayüzü olanı seçer, izin ister
+2. Karta güç verir ve **ATR'yi gösterir** — kartın gerçek sürümü buradan
+3. Okuyucunun APDU düzeyini (kısa / uzun / TPDU) CCID tanımlayıcısından okur
+4. Kart seri numarasını alır (`00 CA 01 06`)
+5. PKCS#15 ağacını gezer: EF(DIR) → ODF → PrKDF / CDF / AODF; her dosyanın
+   onaltılık dökümünü saklar
+6. Sertifikaları okuyup `CertificateFactory` ile çözer: sahibi, veren,
+   geçerlilik, anahtar uzunluğu
+7. Bulamazsa AKİS dizin komutuyla (`80 18`) bütün dosyaları tarayıp
+   sertifika arar
+
+Rapor yorumlanmış alanların yanında **ham dökümü de** taşıyor. Amaç bu:
+imzalama katmanı, tahmine değil cihazdan gelen gerçek çıktıya bakılarak
+yazılacak.
+
+### Sonraki adım
+
+Tanı raporu elde edildikten sonra:
+
+1. ATR'ye göre kart sürümü doğrulanır
+2. AODF'den PIN referansı, PrKDF'den anahtar referansı kesinleştirilir
+3. PIN diyaloğu + `00 20 00 <pinRef>` (kalan hak gösterilerek)
+4. `00 22 C3 <keyRef>` → `00 2A 9E 9A <DigestInfo>`
+5. BouncyCastle ile CAdES-BES paketleme, `sign.sgn` olarak arşive ekleme
 
 ---
 
