@@ -127,20 +127,18 @@ public class ImzaPlugin extends Plugin {
                         throw new Exception(String.format("PIN kabul edilmedi (%04X).", sw));
                     }
 
-                    if (!kart.guvenlikOrtami(anahtarRef))
-                        throw new Exception("İmza anahtarı seçilemedi.");
-
                     byte[] sgn = Cms.uret(icerik, sertifika, new java.util.Date(),
                         new Cms.Imzalayici() {
                             @Override
                             public byte[] imzala(byte[] digestInfo) throws Exception {
-                                return kart.imzala(digestInfo);
+                                return kart.imzala(anahtarRef, digestInfo);
                             }
                         });
 
                     JSObject r = new JSObject();
                     r.put("udf", Base64.encodeToString(sgnEkle(udf, sgn), Base64.NO_WRAP));
                     r.put("imza", sgn.length);
+                    r.put("bicim", kart.sonBicim);
                     call.resolve(r);
                 } catch (Exception e) {
                     String m = e.getMessage();

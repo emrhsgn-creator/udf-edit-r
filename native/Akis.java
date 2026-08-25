@@ -193,32 +193,83 @@ public class Akis {
         return -1;
     }
 
-    /* İmzalanacak anahtarı seçer. Standart biçim bu kartta 90 00 veriyor;
-       kısa biçim yedek. (AKİS v1.0'ın 00 22 C3 biçimi 6A 86 veriyor.) */
-    public boolean guvenlikOrtami(int anahtarRef) throws Exception {
-        byte[] tam = {0x00, 0x22, 0x41, (byte) 0xB6, 0x06,
-                      (byte) 0x84, 0x01, (byte) anahtarRef, (byte) 0x80, 0x01, 0x02};
-        if (send(tam).ok()) return true;
-        byte[] kisa = {0x00, 0x22, 0x41, (byte) 0xB6, 0x03,
-                       (byte) 0x84, 0x01, (byte) anahtarRef};
-        return send(kisa).ok();
+    /* İmzalanacak anahtarı seçer: 00 22 41 B6 <veri>. */
+    public boolean guvenlikOrtami(byte[] veri) throws Exception {
+        byte[] apdu = new byte[5 + veri.length];
+        apdu[0] = 0x00;
+        apdu[1] = 0x22;
+        apdu[2] = 0x41;
+        apdu[3] = (byte) 0xB6;
+        apdu[4] = (byte) veri.length;
+        System.arraycopy(veri, 0, apdu, 5, veri.length);
+        return send(apdu).ok();
     }
 
-    /* PSO: COMPUTE DIGITAL SIGNATURE — asıl imza kartın içinde atılıyor,
-       özel anahtar kartı hiç terk etmiyor. */
-    public byte[] imzala(byte[] digestInfo) throws Exception {
-        byte[] apdu = new byte[6 + digestInfo.length];
+    private R pso(byte[] veri, boolean le) throws Exception {
+        byte[] apdu = new byte[(le ? 6 : 5) + veri.length];
         apdu[0] = 0x00;
         apdu[1] = 0x2A;
         apdu[2] = (byte) 0x9E;
         apdu[3] = (byte) 0x9A;
-        apdu[4] = (byte) digestInfo.length;
-        System.arraycopy(digestInfo, 0, apdu, 5, digestInfo.length);
-        apdu[apdu.length - 1] = 0x00;                 // Le
-        R r = send(apdu);
-        if (!r.ok()) throw new Exception("Kart imzalamayı reddetti (" + r.swHex() + ").");
-        if (r.data.length == 0) throw new Exception("Kart boş imza döndürdü.");
-        return r.data;
+        apdu[4] = (byte) veri.length;
+        System.arraycopy(veri, 0, apdu, 5, veri.length);
+        if (le) apdu[apdu.length - 1] = 0x00;
+        return send(apdu);
+    }
+
+    /* Kullanılan imza biçimi — çalışan kombinasyon bulununca doldurulur,
+       rapora yazılıp belgelensin diye. */
+    public String sonBicim = "";
+
+    /* PSO: COMPUTE DIGITAL SIGNATURE. Asıl imza kartın içinde atılıyor;
+       özel anahtar kartı hiç terk etmiyor.
+
+       Kartların bir kısmı hazır DigestInfo bekler, bir kısmı çıplak özeti
+       alıp DigestInfo'yu kendisi sarar; algoritma göstergesi de değişir.
+       Hangisini istediğini belgeleyen bir kaynak yok, o yüzden sırayla
+       deniyoruz. PIN bir kez doğrulandıktan sonra bu denemeler deneme
+       hakkı tüketmiyor — 6A80 "veri beğenilmedi" demek, "PIN yanlış" değil. */
+    public byte[] imzala(int anahtarRef, byte[] digestInfo) throws Exception {
+        byte[] hamOzet = new byte[32];
+        System.arraycopy(digestInfo, digestInfo.length - 32, hamOzet, 0, 32);
+
+        byte[] mseAlg02 = {(byte) 0x84, 0x01, (byte) anahtarRef, (byte) 0x80, 0x01, 0x02};
+        byte[] mseAlg12 = {(byte) 0x84, 0x01, (byte) anahtarRef, (byte) 0x80, 0x01, 0x12};
+        byte[] mseYalin = {(byte) 0x84, 0x01, (byte) anahtarRef};
+
+        byte[][] mseler   = {mseAlg02, mseAlg02, mseYalin, mseYalin, mseAlg12, mseAlg12, mseAlg02, mseYalin};
+        String[] mseAdlar = {"alg 02", "alg 02", "yalın",  "yalın",  "alg 12", "alg 12", "alg 02", "yalın"};
+        byte[][] veriler  = {hamOzet,  digestInfo, digestInfo, hamOzet, hamOzet, digestInfo, hamOzet, digestInfo};
+        String[] veriAd   = {"çıplak özet", "DigestInfo", "DigestInfo", "çıplak özet",
+                             "çıplak özet", "DigestInfo", "çıplak özet", "DigestInfo"};
+        boolean[] leler   = {true, true, true, true, true, true, false, false};
+
+        StringBuilder gunluk = new StringBuilder();
+        for (int i = 0; i < mseler.length; i++) {
+            /* Başarısız bir PSO güvenlik ortamını düşürebiliyor; her
+               denemeden önce anahtarı yeniden seçiyoruz. */
+            if (!guvenlikOrtami(mseler[i])) {
+                ekle(gunluk, mseAdlar[i] + " + " + veriAd[i] + ": anahtar seçilemedi");
+                continue;
+            }
+            R r = pso(veriler[i], leler[i]);
+            if (r.ok() && r.data.length > 0) {
+                sonBicim = mseAdlar[i] + " + " + veriAd[i] + (leler[i] ? " + Le" : "");
+                return r.data;
+            }
+            if (r.sw == 0x6982) {
+                throw new Exception("Kart PIN doğrulamasını düşürdü (6982). "
+                        + "Denenen biçimler: " + gunluk);
+            }
+            ekle(gunluk, mseAdlar[i] + " + " + veriAd[i]
+                    + (leler[i] ? " + Le" : "") + ": " + r.swHex());
+        }
+        throw new Exception("Kart hiçbir imza biçimini kabul etmedi. " + gunluk);
+    }
+
+    private static void ekle(StringBuilder b, String s) {
+        if (b.length() > 0) b.append("; ");
+        b.append(s);
     }
 
     /* Dosya var mı diye bakar. SELECT hiçbir hak tüketmez, güvenli. */
