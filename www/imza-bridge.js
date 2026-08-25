@@ -48,7 +48,9 @@
     s.push("cihaz: " + r.cihaz + "  (VID " + r.vid + " / PID " + r.pid + ")");
     s.push("ccid: " + r.ccidDuzey);
     s.push("ccid tanımlayıcı: " + r.ccidTanim);
-    s.push("ATR: " + r.atr);
+    s.push("yuva: " + (r.kartDurumu || "-"));
+    if (r.hata) s.push("HATA: " + r.hata);
+    s.push("ATR: " + (r.atr || "-"));
     s.push("seri: " + (r.seri || "-"));
     s.push("EF(DIR): " + (r.efDir || "-"));
     s.push("ODF: " + (r.odf || "-"));
@@ -78,6 +80,8 @@
       alan("APDU düzeyi", r.ccidDuzey));
 
     h += bolum("Kart",
+      alan("Yuva durumu", r.kartDurumu) +
+      (r.hata ? '<div style="color:#A8121C;margin:0 0 6px"><b>' + esc(r.hata) + "</b></div>" : "") +
       kutu("ATR", r.atr) +
       alan("Seri numarası", r.seri));
 

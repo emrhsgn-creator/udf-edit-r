@@ -124,7 +124,18 @@ public class ImzaPlugin extends Plugin {
                     r.put("ccidDuzey", Ccid.exchangeLevel(desc));
                     r.put("ccidTanim", Ccid.hex(desc));
 
-                    byte[] atr = ccid.powerOn();
+                    r.put("kartDurumu", ccid.slotDurumu());
+
+                    /* Karta ulaşılamazsa da elimizdekini raporluyoruz:
+                       okuyucu bilgisi ve yuva durumu sorunu daraltıyor. */
+                    byte[] atr;
+                    try {
+                        atr = ccid.powerOn();
+                    } catch (Exception e) {
+                        r.put("hata", e.getMessage());
+                        call.resolve(r);
+                        return;
+                    }
                     r.put("atr", Ccid.hex(atr));
 
                     Akis kart = new Akis(ccid);

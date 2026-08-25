@@ -21,9 +21,10 @@ public class Ccid {
 
     public static final int CLASS_CCID = 11;
 
-    private static final byte PC_TO_RDR_ICC_POWER_ON  = 0x62;
-    private static final byte PC_TO_RDR_ICC_POWER_OFF = 0x63;
-    private static final byte PC_TO_RDR_XFR_BLOCK     = 0x6F;
+    private static final byte PC_TO_RDR_ICC_POWER_ON    = 0x62;
+    private static final byte PC_TO_RDR_ICC_POWER_OFF   = 0x63;
+    private static final byte PC_TO_RDR_GET_SLOT_STATUS = 0x65;
+    private static final byte PC_TO_RDR_XFR_BLOCK       = 0x6F;
 
     /* Kartta RSA-2048 imza bir saniyeyi bulabiliyor; okuyucu ayrıca zaman
        uzatma isteyebiliyor. Cömert davranıyoruz. */
@@ -70,9 +71,78 @@ public class Ccid {
     }
 
     /* Karta güç verir ve ATR'yi döndürür. ATR kartın kimlik kartıdır:
-       hangi AKİS sürümü olduğunu buradan anlıyoruz. */
+       hangi AKİS sürümü olduğunu buradan anlıyoruz.
+
+       Okuyucunun "otomatik" voltaj seçimi her kartla anlaşamıyor; ICC_MUTE
+       alırsak 5V / 3V / 1.8V'u sırayla deniyoruz. Her denemeden önce kartı
+       kapatıyoruz, çünkü önceki denemeden yarım kalmış bir durumda olabilir. */
     public byte[] powerOn() throws Exception {
-        return command(PC_TO_RDR_ICC_POWER_ON, new byte[0], (byte) 0, (byte) 0, (byte) 0);
+        byte[] voltajlar = {0x00, 0x01, 0x02, 0x03};
+        String[] adlar = {"otomatik", "5V", "3V", "1.8V"};
+        StringBuilder gunluk = new StringBuilder();
+
+        for (int i = 0; i < voltajlar.length; i++) {
+            try { rawCommand(PC_TO_RDR_ICC_POWER_OFF, new byte[0], (byte) 0, (byte) 0, (byte) 0); }
+            catch (Exception ignored) {}
+            try { Thread.sleep(60); } catch (InterruptedException ignored) {}
+
+            try {
+                byte[] resp = rawCommand(PC_TO_RDR_ICC_POWER_ON, new byte[0], voltajlar[i], (byte) 0, (byte) 0);
+                int status = resp[7] & 0xFF;
+                int error  = resp[8] & 0xFF;
+                if ((status & 0xC0) == 0x00 && resp.length > 10) {
+                    byte[] atr = new byte[resp.length - 10];
+                    System.arraycopy(resp, 10, atr, 0, atr.length);
+                    return atr;
+                }
+                if (gunluk.length() > 0) gunluk.append("; ");
+                gunluk.append(adlar[i]).append(": ").append(hataMetni(status, error));
+            } catch (Exception e) {
+                if (gunluk.length() > 0) gunluk.append("; ");
+                gunluk.append(adlar[i]).append(": ").append(e.getMessage());
+            }
+        }
+        throw new Exception("Karta güç verilemedi — " + gunluk);
+    }
+
+    /* Yuvada kart var mı? Güç verme başarısız olduğunda "kart yok" ile
+       "kart yanıt vermiyor" ayrımını yapabilmek için. */
+    public String slotDurumu() {
+        try {
+            byte[] resp = rawCommand(PC_TO_RDR_GET_SLOT_STATUS, new byte[0], (byte) 0, (byte) 0, (byte) 0);
+            switch (resp[7] & 0x03) {
+                case 0:  return "kart takılı ve etkin";
+                case 1:  return "kart takılı, etkin değil";
+                case 2:  return "yuvada kart yok";
+                default: return "bilinmiyor";
+            }
+        } catch (Exception e) {
+            return "okunamadı (" + e.getMessage() + ")";
+        }
+    }
+
+    /* CCID hata kodlarının anlamı — ekranda ham sayı yerine ne olduğu yazsın. */
+    public static String hataMetni(int status, int error) {
+        String kart;
+        switch (status & 0x03) {
+            case 0:  kart = "kart takılı ve etkin"; break;
+            case 1:  kart = "kart takılı ama etkin değil"; break;
+            case 2:  kart = "yuvada kart yok"; break;
+            default: kart = "kart durumu bilinmiyor";
+        }
+        String ne;
+        switch (error) {
+            case 0xFE: ne = "kart yanıt vermiyor (ICC_MUTE)"; break;
+            case 0xFD: ne = "eşlik hatası (XFR_PARITY_ERROR)"; break;
+            case 0xFC: ne = "kart protokolü desteklenmiyor"; break;
+            case 0xFB: ne = "donanım hatası"; break;
+            case 0xF8: ne = "kart yanlış voltajda"; break;
+            case 0xEF: ne = "kullanıcı iptal etti"; break;
+            case 0xE0: ne = "yuva zaten kullanımda"; break;
+            case 0x00: ne = "komut kabul edilmedi"; break;
+            default:   ne = String.format("hata kodu %02X", error);
+        }
+        return ne + " — " + kart;
     }
 
     /* Ham APDU gönderir, ham yanıtı (SW dahil) döndürür. */
@@ -80,7 +150,18 @@ public class Ccid {
         return command(PC_TO_RDR_XFR_BLOCK, apdu, (byte) 0, (byte) 0, (byte) 0);
     }
 
-    private synchronized byte[] command(byte type, byte[] data, byte b7, byte b8, byte b9)
+    private byte[] command(byte type, byte[] data, byte b7, byte b8, byte b9) throws Exception {
+        byte[] resp = rawCommand(type, data, b7, b8, b9);
+        int status = resp[7] & 0xFF;
+        int error  = resp[8] & 0xFF;
+        if ((status & 0xC0) != 0x00) throw new Exception("CCID: " + hataMetni(status, error));
+        byte[] body = new byte[resp.length - 10];
+        System.arraycopy(resp, 10, body, 0, body.length);
+        return body;
+    }
+
+    /* Yanıtı başlığıyla birlikte, durum denetimi yapmadan döndürür. */
+    private synchronized byte[] rawCommand(byte type, byte[] data, byte b7, byte b8, byte b9)
             throws Exception {
         int n = data.length;
         byte[] msg = new byte[10 + n];
@@ -120,17 +201,8 @@ public class Ccid {
             }
             byte[] resp = acc.toByteArray();
             int status = resp[7] & 0xFF;
-            int error  = resp[8] & 0xFF;
-
             if ((status & 0xC0) == 0x80) continue;          // zaman uzatma istendi
-            if ((status & 0xC0) != 0x00) {
-                if ((status & 0x03) == 0x02)
-                    throw new Exception("Okuyucuda kart yok. Token'ı tam oturtup tekrar deneyin.");
-                throw new Exception(String.format("CCID hatası (durum %02X, hata %02X).", status, error));
-            }
-            byte[] body = new byte[resp.length - 10];
-            System.arraycopy(resp, 10, body, 0, body.length);
-            return body;
+            return resp;
         }
     }
 
