@@ -137,11 +137,23 @@ public class ImzaPlugin extends Plugin {
                         return;
                     }
                     r.put("atr", Ccid.hex(atr));
+                    r.put("protokol", ccid.protokolSec(atr));
 
                     Akis kart = new Akis(ccid);
-                    r.put("seri", Ccid.hex(kart.serial()));
 
-                    Pkcs15.Sonuc s = Pkcs15.gez(kart);
+                    /* Buradan sonrası kartla konuşmak. Bir yerde takılırsak
+                       rapor yine açılsın: elimizdeki ATR ve okuyucu bilgisi
+                       sorunu daraltmaya yetiyor. */
+                    Pkcs15.Sonuc s;
+                    try {
+                        r.put("seri", Ccid.hex(kart.serial()));
+                        s = Pkcs15.gez(kart);
+                    } catch (Exception e) {
+                        r.put("hata", e.getMessage());
+                        call.resolve(r);
+                        return;
+                    }
+
                     r.put("efDir", ozet(s.efDir));
                     r.put("odf", ozet(s.odf));
 

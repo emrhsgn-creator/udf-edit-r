@@ -47,6 +47,7 @@
     var s = [];
     s.push("cihaz: " + r.cihaz + "  (VID " + r.vid + " / PID " + r.pid + ")");
     s.push("ccid: " + r.ccidDuzey);
+    s.push("protokol: " + (r.protokol || "-"));
     s.push("ccid tanımlayıcı: " + r.ccidTanim);
     s.push("yuva: " + (r.kartDurumu || "-"));
     if (r.hata) s.push("HATA: " + r.hata);
@@ -77,7 +78,8 @@
     h += bolum("Okuyucu",
       alan("Cihaz", r.cihaz) +
       alan("VID / PID", r.vid + " / " + r.pid) +
-      alan("APDU düzeyi", r.ccidDuzey));
+      alan("APDU düzeyi", r.ccidDuzey) +
+      alan("Kullanılan katman", r.protokol));
 
     h += bolum("Kart",
       alan("Yuva durumu", r.kartDurumu) +

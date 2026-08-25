@@ -34,6 +34,7 @@ public class Ccid {
     private final UsbInterface iface;
     private final UsbEndpoint epOut, epIn;
     private byte seq = 0;
+    private T1 t1 = null;             // ham TPDU kipinde devreye giriyor
 
     public static UsbInterface ccidInterface(UsbDevice dev) {
         for (int i = 0; i < dev.getInterfaceCount(); i++) {
@@ -145,9 +146,30 @@ public class Ccid {
         return ne + " — " + kart;
     }
 
-    /* Ham APDU gönderir, ham yanıtı (SW dahil) döndürür. */
+    /* APDU gönderir. Okuyucu APDU düzeyinde çalışıyorsa doğrudan; ham TPDU
+       kipindeyse T=1 bloklarına sarılarak. */
     public byte[] transmit(byte[] apdu) throws Exception {
-        return command(PC_TO_RDR_XFR_BLOCK, apdu, (byte) 0, (byte) 0, (byte) 0);
+        return t1 != null ? t1.transmit(apdu) : transmitRaw(apdu);
+    }
+
+    /* Okuyucuya olduğu gibi gider — T=1 katmanı bloklarını buradan yollar. */
+    public byte[] transmitRaw(byte[] blok) throws Exception {
+        return command(PC_TO_RDR_XFR_BLOCK, blok, (byte) 0, (byte) 0, (byte) 0);
+    }
+
+    /* Güç verdikten sonra çağrılır: okuyucunun APDU düzeyi ile kartın
+       protokolüne bakıp aradaki katmanı seçer, ne seçtiğini döndürür. */
+    public String protokolSec(byte[] atr) {
+        String duzey = exchangeLevel(classDescriptor());
+        boolean kartT1 = T1.atrT1(atr);
+        boolean apduDuzeyi = duzey.startsWith("kısa");
+
+        if (!apduDuzeyi && kartT1) {
+            t1 = new T1(this);
+            return "T=1 blokları (okuyucu " + duzey + ", kart T=1)";
+        }
+        t1 = null;
+        return "doğrudan APDU (okuyucu " + duzey + ", kart " + (kartT1 ? "T=1" : "T=0") + ")";
     }
 
     private byte[] command(byte type, byte[] data, byte b7, byte b8, byte b9) throws Exception {
