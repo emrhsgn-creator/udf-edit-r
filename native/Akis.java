@@ -227,59 +227,45 @@ public class Akis {
 
     /* İmzayı kart atıyor; özel anahtar kartı hiç terk etmiyor.
 
-       Elenenler (hepsi cihazda denendi, hepsi 6A80):
-         - Veri uzunluğu 20 / 32 / 51 bayt
-         - Algoritma göstergesinin 19 değeri
-         - Anahtar etiketi 84/83, referans 01/81
-       Ayrıca: INTERNAL AUTHENTICATE 6A87, PSO: HASH 6A86, P2 = AC ve BC
-       6A86 (yani 9E 9A doğru parametre), 256 baytlık blok gönderilemiyor.
+       Uzunluk taraması kapattı: 1-255 arası 143 uzunluğun tamamı 6A80
+       verdi. Kart hiçbir veri uzunluğunu kabul etmiyorsa 6A80 "veri alanın
+       yanlış" demiyor — kart PSO'yu hiçbir şartta yapmıyor ve 6A80'i genel
+       ret kodu olarak kullanıyor. Sorun verinin biçiminde değil, izinde.
 
-       Semantiği tahmin etmeyi bırakıp kısıtı ölçüyoruz: veri alanının
-       uzunluğunu tarayıp kartın hangisini kabul ettiğine bakıyoruz. 6A80
-       "veri alanı yanlış" demek; doğru uzunluk başka bir kod döndürecek.
-       Gönderilen veri anlamsız dolgu, çıkan imza kullanılmıyor — bu bir
-       ölçüm turu. PIN doğrulandıktan sonra hiçbir hak tüketilmiyor. */
+       Bu yüzden burada artık tarama yok: makul dört biçim deneniyor, karar
+       çağıran katmana bırakılıyor (ikinci PIN denemesi orada). */
     public byte[] imzala(int anahtarRef, byte[] digestInfo) throws Exception {
-        byte[] mse = {(byte) 0x84, 0x01, (byte) anahtarRef};
+        byte[] h32 = new byte[32];
+        System.arraycopy(digestInfo, digestInfo.length - 32, h32, 0, 32);
 
-        /* Deterministik dolgu; içeriğin anlamı yok, uzunluk ölçülüyor. */
-        byte[] havuz = new byte[255];
-        for (int i = 0; i < havuz.length; i++) havuz[i] = (byte) (i + 1);
+        byte[][] mseler   = {{(byte) 0x84, 0x01, (byte) anahtarRef},
+                             {(byte) 0x84, 0x01, (byte) anahtarRef, (byte) 0x80, 0x01, 0x02}};
+        String[] mseAdlar = {"yalın", "alg02"};
+        byte[][] veriler  = {h32, digestInfo};
+        String[] veriAd   = {"32", "51"};
 
-        StringBuilder farkli = new StringBuilder();
-        int say6A80 = 0, denenen = 0;
-
-        for (int n = 1; n <= 255; n++) {
-            if (n > 128 && (n % 8) != 0) continue;          // 128 üstünde seyrek tara
-            byte[] veri = new byte[n];
-            System.arraycopy(havuz, 0, veri, 0, n);
-
-            R r;
-            try {
-                if (!guvenlikOrtami(0xB6, mse)) {
-                    ekle(farkli, "MSE reddedildi (n=" + n + ")");
-                    break;
+        StringBuilder gunluk = new StringBuilder();
+        for (int m = 0; m < mseler.length; m++) {
+            for (int v = 0; v < veriler.length; v++) {
+                R r;
+                try {
+                    if (!guvenlikOrtami(0xB6, mseler[m])) {
+                        ekle(gunluk, mseAdlar[m] + ": MSE reddedildi");
+                        break;
+                    }
+                    r = pso(0x9A, veriler[v]);
+                } catch (Exception e) {
+                    ekle(gunluk, mseAdlar[m] + " " + veriAd[v] + ": " + e.getMessage());
+                    continue;
                 }
-                r = pso(0x9A, veri);
-            } catch (Exception e) {
-                ekle(farkli, n + ":hata");
-                continue;
+                if (r.ok() && r.data.length > 0) {
+                    sonBicim = mseAdlar[m] + " + " + veriAd[v] + " bayt";
+                    return r.data;
+                }
+                ekle(gunluk, mseAdlar[m] + " " + veriAd[v] + ": " + r.swHex());
             }
-            denenen++;
-
-            if (r.ok() && r.data.length > 0) {
-                ekle(farkli, n + ":KABUL(" + r.data.length + " bayt)");
-                continue;                                   // ölçüm turu, imza kullanılmıyor
-            }
-            if (r.sw == 0x6982) throw new Exception(
-                    "Kart PIN doğrulamasını düşürdü (6982) n=" + n + ". Bulunanlar: " + farkli);
-            if (r.sw == 0x6A80) say6A80++;
-            else ekle(farkli, n + ":" + r.swHex());
         }
-
-        throw new Exception("Uzunluk taraması bitti. Denenen: " + denenen
-                + ", 6A80 veren: " + say6A80
-                + ". Farklı davrananlar: " + (farkli.length() > 0 ? farkli : "hiçbiri"));
+        throw new Exception("Kart imzalamayı reddetti (" + gunluk + ")");
     }
 
     private static void ekle(StringBuilder b, String s) {

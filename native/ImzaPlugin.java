@@ -135,7 +135,6 @@ public class ImzaPlugin extends Plugin {
                         kart.selectAid(Pkcs15.AID_KISA);
                         prkdf = kart.readFile(new byte[]{0x2F, 0x01});
                     } catch (Exception yok) { /* okunamadıysa PuKDF'teki değerle devam */ }
-                    final String prkdfHex = ozet(prkdf);
                     if (prkdf != null && prkdf.length > 0) {
                         java.util.List<Integer> refler = Pkcs15.integers(prkdf, 1);
                         if (!refler.isEmpty()) anahtarRef = refler.get(refler.size() - 1);
@@ -147,21 +146,49 @@ public class ImzaPlugin extends Plugin {
                        değerlendiriyor olabilir. */
                     kart.selectAid(Pkcs15.AID_KISA);
 
+                    Cms.Imzalayici kartImzalayici = new Cms.Imzalayici() {
+                        @Override
+                        public byte[] imzala(byte[] digestInfo) throws Exception {
+                            return kart.imzala(ref, digestInfo);
+                        }
+                    };
+
                     byte[] sgn;
                     try {
-                        sgn = Cms.uret(icerik, sertifika, new java.util.Date(),
-                            new Cms.Imzalayici() {
-                                @Override
-                                public byte[] imzala(byte[] digestInfo) throws Exception {
-                                    return kart.imzala(ref, digestInfo);
-                                }
-                            });
-                    } catch (Exception e) {
-                        /* PrKDF dökümünü hataya iliştiriyoruz: kartın ne istediği
-                           bir sonraki turda buradan çıkacak. */
-                        throw new Exception(e.getMessage()
-                                + "  ||  anahtar ref: " + ref
-                                + "  ||  PrKDF: " + (prkdfHex.isEmpty() ? "okunamadı" : prkdfHex));
+                        sgn = Cms.uret(icerik, sertifika, new java.util.Date(), kartImzalayici);
+                    } catch (Exception ilk) {
+                        /* Uzunluk taraması kartın PSO'yu hiçbir veriyle yapmadığını
+                           gösterdi; sorun izinde görünüyor. Kartta iki PIN nesnesi
+                           var (81 ve 82) ve şimdiye kadar yalnızca 81 doğrulandı.
+                           İmza anahtarı 82'ye bağlıysa PSO ancak ondan sonra açılır.
+
+                           TEK deneme yapıyoruz ve sonucu ne olursa olsun duruyoruz:
+                           82 farklı bir değere sahipse bu bir deneme hakkına mal
+                           olur, ikincisini kullanıcı onayı olmadan harcamayız. */
+                        int sw2;
+                        try {
+                            sw2 = kart.pinDogrula(0x82, pin);
+                        } catch (Exception e) {
+                            throw new Exception(ilk.getMessage()
+                                    + "  ||  ikinci PIN denenemedi: " + e.getMessage());
+                        }
+                        String not = String.format("%04X (%s)", sw2, Akis.pinDurum(sw2));
+
+                        if (sw2 != 0x9000) {
+                            throw new Exception(ilk.getMessage()
+                                    + "  ||  ikinci PIN (82) kabul edilmedi: " + not
+                                    + "  ||  anahtar ref: " + ref);
+                        }
+
+                        /* 82 kabul edildi — imzayı bir kez daha deniyoruz. */
+                        try {
+                            sgn = Cms.uret(icerik, sertifika, new java.util.Date(), kartImzalayici);
+                        } catch (Exception ikinci) {
+                            throw new Exception("İkinci PIN (82) kabul edildi ama imza yine "
+                                    + "reddedildi: " + ikinci.getMessage()
+                                    + "  ||  ilk deneme: " + ilk.getMessage());
+                        }
+                        kart.sonBicim += " (ikinci PIN 82 ile)";
                     }
 
                     JSObject r = new JSObject();
