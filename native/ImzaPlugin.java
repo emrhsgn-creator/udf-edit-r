@@ -153,43 +153,15 @@ public class ImzaPlugin extends Plugin {
                         }
                     };
 
-                    byte[] sgn;
-                    try {
-                        sgn = Cms.uret(icerik, sertifika, new java.util.Date(), kartImzalayici);
-                    } catch (Exception ilk) {
-                        /* Uzunluk taraması kartın PSO'yu hiçbir veriyle yapmadığını
-                           gösterdi; sorun izinde görünüyor. Kartta iki PIN nesnesi
-                           var (81 ve 82) ve şimdiye kadar yalnızca 81 doğrulandı.
-                           İmza anahtarı 82'ye bağlıysa PSO ancak ondan sonra açılır.
+                    /* İkinci PIN (0x82) BİR KEZ denendi ve 6300 verdi: değeri
+                       kullanıcının PIN'inden farklı, muhtemelen PUK ya da ayrı bir
+                       imza PIN'i. O denemede bir hak yandı ve kart kalan hakkı
+                       bildirmedi.
 
-                           TEK deneme yapıyoruz ve sonucu ne olursa olsun duruyoruz:
-                           82 farklı bir değere sahipse bu bir deneme hakkına mal
-                           olur, ikincisini kullanıcı onayı olmadan harcamayız. */
-                        int sw2;
-                        try {
-                            sw2 = kart.pinDogrula(0x82, pin);
-                        } catch (Exception e) {
-                            throw new Exception(ilk.getMessage()
-                                    + "  ||  ikinci PIN denenemedi: " + e.getMessage());
-                        }
-                        String not = String.format("%04X (%s)", sw2, Akis.pinDurum(sw2));
-
-                        if (sw2 != 0x9000) {
-                            throw new Exception(ilk.getMessage()
-                                    + "  ||  ikinci PIN (82) kabul edilmedi: " + not
-                                    + "  ||  anahtar ref: " + ref);
-                        }
-
-                        /* 82 kabul edildi — imzayı bir kez daha deniyoruz. */
-                        try {
-                            sgn = Cms.uret(icerik, sertifika, new java.util.Date(), kartImzalayici);
-                        } catch (Exception ikinci) {
-                            throw new Exception("İkinci PIN (82) kabul edildi ama imza yine "
-                                    + "reddedildi: " + ikinci.getMessage()
-                                    + "  ||  ilk deneme: " + ilk.getMessage());
-                        }
-                        kart.sonBicim += " (ikinci PIN 82 ile)";
-                    }
+                       Bu yüzden burada bir daha DENENMİYOR. Kartı bloke etme
+                       riskini kullanıcı onayı olmadan almıyoruz; 0x82'nin ne
+                       olduğu öğrenilmeden bu yol kapalı. */
+                    byte[] sgn = Cms.uret(icerik, sertifika, new java.util.Date(), kartImzalayici);
 
                     JSObject r = new JSObject();
                     r.put("udf", Base64.encodeToString(sgnEkle(udf, sgn), Base64.NO_WRAP));

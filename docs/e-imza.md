@@ -243,10 +243,10 @@ Doğrulama (`javac` + `openssl`, cihaz gerekmeden):
 2. Gerçek UYAP imzasıyla yapı karşılaştırması: `openssl asn1parse` çıktısı
    **178 satır / 178 satır, tek fark imza zamanı**. Toplam boyut da aynı.
 
-### İmza komutu — elenenler
+### İmza komutu — çözülemedi
 
-Kartın imza komutunun tam biçimi belgesiz ve cihazda tek tek deneniyor.
-Şu ana kadar kesin olarak elenenler:
+Kartın imza komutunun tam biçimi belgesiz. Cihazda sistematik olarak
+denendi ve **çalışan bir biçim bulunamadı.** Elenenler:
 
 | Denenen | Sonuç |
 |---|---|
@@ -267,10 +267,37 @@ Bu arada öğrenilen iki şey:
   "çıkarılabilir" gösteriyor. Nitelikli imza anahtarı için ikisi de
   saçma; üstveri süs.
 
-Sıradaki hipotez: `6A87` ("Lc, P1-P2 ile tutarsız") bu kartın komut
-parametreleriyle veri alanı arasındaki ilişkiye titiz olduğunu gösteriyor.
-PSO şimdiye kadar hep `P2 = 9A` ile denendi; ISO 7816-8 ayrıca `AC` (dolgu
-göstergesi + veri) ve `BC` (hazır DSI) tanımlıyor.
+Sonraki turlarda elenenler:
+
+| Denenen | Sonuç |
+|---|---|
+| `P2 = AC` ve `P2 = BC` (ISO 7816-8'in diğer iki seçeneği) | `6A86` — yani `9E 9A` doğru parametre |
+| **Veri uzunluğu taraması: 1–255 arası 143 uzunluk** | **hepsi `6A80`** |
+| İkinci PIN `0x82`, kullanıcının PIN'iyle (tek deneme) | `6300` — değer farklı, bir hak yandı |
+
+### Nerede tıkandık
+
+Uzunluk taraması belirleyici oldu. Kart **hiçbir** veri uzunluğunu kabul
+etmiyorsa `6A80` "veri alanın yanlış" demiyor — kart PSO'yu hiçbir şartta
+yapmıyor ve `6A80`'i genel ret kodu olarak kullanıyor. Sorun verinin
+biçiminde değil, **izinde**.
+
+`0x81` doğrulanıyor (`9000`) ama imzayı açmıyor. `0x82` kullanıcının
+PIN'inden farklı bir değere sahip (`6300`) — muhtemelen PUK ya da ayrı bir
+imza PIN'i. **Kod artık `0x82`'yi denemiyor**; ne olduğu öğrenilmeden o
+yol kapalı, kartı bloke etme riski var.
+
+Geriye kalan ciddi ihtimaller:
+
+1. **İmza anahtarı ayrı bir PIN'e bağlı** ve o PIN kullanıcıda ayrı bir
+   değer olarak duruyor (TÜRKTRUST'ın kart yönetim yazılımı PALMA bunu
+   gösterebilir).
+2. **Kart imza komutu için güvenli mesajlaşma şart koşuyor.** Bu durumda
+   karta gömülü oturum anahtarları gerekir ve üreticinin kütüphanesi
+   olmadan dışarıdan çözülemez.
+
+İkisini de ayırt etmenin yolu kod yazmak değil, TÜRKTRUST'a sormak:
+`0x82` referansının ne olduğu ve imza için ayrı PIN gerekip gerekmediği.
 
 Kart tarafındaki sıra:
 
