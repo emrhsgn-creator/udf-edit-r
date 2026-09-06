@@ -97,7 +97,12 @@ w.doc.page = {w:595.28,h:841.89,mt:70,mr:60,mb:50,ml:40,orient:1};
 w.yazdirKurali();
 const kural = w.document.getElementById("printPage").textContent;
 ok(/@page/.test(kural), "@page kuralı yazılıyor");
-ok(/margin:\s*70pt\s+60pt\s+50pt\s+40pt/.test(kural), "kenar boşlukları belgeden geliyor");
+/* Kenar boşluğu sıfır olmalı: tarayıcı üstbilgi/altbilgiyi oraya basıyor.
+   Belgenin boşlukları yazdırma biçiminde tablo grubuyla veriliyor. */
+ok(/margin:\s*0\s*\}/.test(kural), "@page kenar boşluğu sıfır (üstbilgi engelleniyor)");
+const yazdirCss = w.document.querySelector("style").textContent;
+ok(/table-header-group/.test(yazdirCss) && /table-footer-group/.test(yazdirCss),
+   "üst/alt boşluk her sayfada tekrarlanan grupla veriliyor");
 ok(/portrait/.test(kural), "dikey belge portrait");
 
 w.doc.page.orient = 0;
