@@ -710,8 +710,13 @@ function yapistirTemizle(html){
 }
 window.yapistirTemizle=yapistirTemizle;
 
-/* Panodan gelen metinde Türkçe harfler soru işaretine dönmüşse sessizce
-   kaydedilmesin. Bir dilekçede bu fark edilmeyen bir veri kaybıdır. */
+/* Yapıştırılan metinde Türkçe harfler soru işaretine dönmüşse sessizce
+   kaydedilmesin. Bir dilekçede bu fark edilmeyen bir veri kaybıdır.
+
+   Denetim, panonun ham içeriğine değil GERÇEKTEN EKLENEN içeriğe bakıyor:
+   UYAP Editör gibi Java uygulamaları panoya hem düz metin hem HTML koyuyor
+   ve çoğu zaman yalnızca düz metin bozuluyor. HTML sağlam geldiyse uyarı
+   vermek yanlış alarm olur. */
 function ypCharsetDenetle(metin){
   const soru=(metin.match(/\?/g)||[]).length;
   if(soru<20||soru/metin.length<0.01)return;
@@ -725,13 +730,18 @@ sheet.addEventListener("paste",e=>{
   e.preventDefault();
   const pano=e.clipboardData||window.clipboardData;
   const html=pano.getData("text/html");
-  const duz=pano.getData("text/plain");
-  ypCharsetDenetle(duz||"");
+  const duz=pano.getData("text/plain")||"";
   if(html){
     const temiz=yapistirTemizle(html);
-    if(temiz.trim()){document.execCommand("insertHTML",false,temiz);touch();return}
+    if(temiz.trim()){
+      document.execCommand("insertHTML",false,temiz);
+      ypCharsetDenetle(temiz.replace(/<[^>]*>/g," "));
+      touch();
+      return;
+    }
   }
   document.execCommand("insertText",false,duz);
+  ypCharsetDenetle(duz);
   touch();
 });
 
