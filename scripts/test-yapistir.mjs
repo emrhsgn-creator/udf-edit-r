@@ -76,5 +76,20 @@ ok(/<table/i.test(kagit), "yapıştırılan tablo editörde duruyor");
 ok(/İBRA/.test(kagit) && /imzalamıştır/.test(kagit), "Türkçe harfler editörde duruyor");
 ok(!kagit.includes("?"), "soru işaretine dönen harf yok");
 
+/* Panoyu atlayan yol: başka bir UDF'i doğrudan belgeye ekleme.
+   Kopyalamada Türkçe harfler kaynak uygulamada kaybolduğu için asıl
+   çözüm bu; düğmesinin ve dosya girişinin var olduğunu doğruluyoruz. */
+ok(!!w.document.getElementById("bInsUdf"), "Belge ekle düğmesi var");
+ok(!!w.document.getElementById("fEkle"), "Belge ekle dosya girişi var");
+
+/* Dosyadan gelen içerik editöre girerken Türkçe ve biçim duruyor mu?
+   Ekleme yolu bu dönüşümü kullanıyor. */
+const dosyadan = w.udfHtmlToEditor(
+  '<p style="text-align:center"><strong>İŞÇİ ve İŞVEREN</strong></p>' +
+  '<p>ığşİĞŞ karakterleri</p>');
+ok(/İŞÇİ/.test(dosyadan) && /ığşİĞŞ/.test(dosyadan), "dosyadan gelen Türkçe korunuyor");
+ok(/<strong>/i.test(dosyadan), "dosyadan gelen kalın korunuyor");
+ok(!dosyadan.includes("?"), "dosyadan gelen metinde soru işareti yok");
+
 console.log(fail ? `\n${fail} sınama başarısız.` : "\nYapıştırma sınaması geçti.");
 process.exit(fail ? 1 : 0);

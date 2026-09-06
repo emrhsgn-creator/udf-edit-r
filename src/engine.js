@@ -640,6 +640,40 @@ sheet.addEventListener("input",()=>{
   touch();
 });
 
+/* ---- Başka bir UDF'i belgeye ekle ----
+   Kopyala-yapıştır panodan geçiyor ve pano, kaynak uygulamanın kodlamasına
+   tabi: UYAP Editör'den kopyalanan metinde Türkçe harfler (ı, ğ, ş, İ) soru
+   işaretine dönüyor ve bu kayıp geri alınamıyor — hepsi aynı karaktere
+   düştüğü için hangisinin ne olduğu bilgisi siliniyor.
+
+   Dosyayı doğrudan okumak panoyu tamamen atlıyor; açma yolunda hem Türkçe
+   hem biçim tam korunuyor. */
+$("bInsUdf").onclick=()=>{saveSel();$("fEkle").click()};
+$("fEkle").onchange=async e=>{
+  const f=e.target.files[0];
+  e.target.value="";                      // aynı dosya tekrar seçilebilsin
+  if(!f)return;
+  if(!doc.loaded){load("<p><br></p>",f.name)}
+  try{
+    const html=await window.UDF.toHtml(await f.arrayBuffer());
+    const parca=udfHtmlToEditor(html);
+    if(!parca.trim()){
+      showNotice('<span class="mk">!</span><span>Eklenecek belge boş görünüyor.</span>');
+      return;
+    }
+    sheet.focus();
+    restoreSel();
+    document.execCommand("insertHTML",false,parca);
+    touch();stats();
+    showNotice('<span class="mk">✓</span><span><b>'+esc(f.name)+
+      '</b> belgeye eklendi.</span>');
+    setTimeout(hideNotice,3000);
+  }catch(err){
+    showNotice('<span class="mk">!</span><span><b>Belge eklenemedi.</b> '+
+      esc(String(err.message||err))+'</span>');
+  }
+};
+
 /* ---- Yapıştırma ----
    Eskiden yapıştırma text/plain'e indiriliyordu: Word ve UYAP'ın HTML çöpünü
    engelliyordu, ama kalın/eğik, hizalama, tablo — biçimin tamamını da

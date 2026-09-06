@@ -142,6 +142,11 @@ Geçmişteki hataların çoğu tam olarak bu noktalardaydı.
   Bu, formatın doğası gereğidir; imzalı asıl UYAP'taki kayıttır.
 - **İç içe listeler:** Codec bunları tek düzeye indiriyor; çok düzeyli liste
   düğmesi kullanıldığında uygulama uyarı gösterir.
+- **UYAP Editör'den kopyala-yapıştır:** UYAP Editör panoya Türkçe harfleri
+  bozuk veriyor — `ı ğ ş İ` soru işaretine dönüyor. Kayıp panoya girmeden
+  önce oluştuğu ve bütün harfler aynı karaktere düştüğü için geri alınamaz.
+  Uygulama bunu fark edip uyarıyor. Doğru yol **Ekle → Belge ekle**: dosya
+  doğrudan okunur, pano devreye girmez, Türkçe ve biçim tam korunur.
 - Uygulama gerçek cihazda denenmedi. Dosya açma ve kaydetme yolları Android
   sürümüne ve dosya yöneticisine göre ayar isteyebilir.
 
