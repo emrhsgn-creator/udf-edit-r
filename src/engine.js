@@ -640,8 +640,100 @@ sheet.addEventListener("input",()=>{
   touch();
 });
 
-sheet.addEventListener("paste",e=>{e.preventDefault();
-  document.execCommand("insertText",false,(e.clipboardData||window.clipboardData).getData("text/plain"))});
+/* ---- Yapıştırma ----
+   Eskiden yapıştırma text/plain'e indiriliyordu: Word ve UYAP'ın HTML çöpünü
+   engelliyordu, ama kalın/eğik, hizalama, tablo — biçimin tamamını da
+   düşürüyordu. Başka bir UDF'den kopyalanan metin düz metne dönüyordu.
+
+   Artık HTML alınıp motorun anladığı ögelere indirgeniyor: izin verilmeyen
+   etiketler içeriğini kaybetmeden açılıyor, izin verilmeyen öznitelik ve stil
+   özellikleri atılıyor. */
+
+const YP_BLOK = {P:1,DIV:1,UL:1,OL:1,LI:1,TABLE:1,TR:1,TD:1,TH:1,BR:1};
+const YP_ICI  = {SPAN:1,B:1,STRONG:1,I:1,EM:1,U:1,S:1,STRIKE:1,DEL:1,SUB:1,SUP:1,FONT:1,IMG:1};
+const YP_SIL  = {SCRIPT:1,STYLE:1,META:1,LINK:1,HEAD:1,TITLE:1,IFRAME:1,OBJECT:1,
+                 EMBED:1,NOSCRIPT:1,BUTTON:1,INPUT:1,SELECT:1,TEXTAREA:1,SVG:1};
+/* inlineStyleOf'un okuduğu özellikler */
+const YP_STIL_ICI  = ["font-weight","font-style","text-decoration","text-decoration-line",
+                      "font-size","font-family","color","background-color","vertical-align"];
+/* blocksHtml'in okuduğu paragraf özellikleri */
+const YP_STIL_BLOK = ["text-align","line-height","margin-left","margin-right",
+                      "margin-top","margin-bottom","text-indent"];
+const YP_BLOK_OGE  = {P:1,DIV:1,LI:1,TD:1,TH:1};
+
+function ypAc(el){                       /* ögeyi kaldır, içeriğini yerine koy */
+  const f=document.createDocumentFragment();
+  while(el.firstChild)f.appendChild(el.firstChild);
+  el.replaceWith(f);
+}
+
+function ypOzellik(el){
+  const t=el.tagName;
+  const liste=YP_BLOK_OGE[t]?YP_STIL_ICI.concat(YP_STIL_BLOK):YP_STIL_ICI;
+  const tut={};
+  liste.forEach(k=>{const v=el.style.getPropertyValue(k);if(v)tut[k]=v});
+
+  const colspan=el.getAttribute("colspan"), rowspan=el.getAttribute("rowspan");
+  const face=t==="FONT"?el.getAttribute("face"):null;
+  const renk=t==="FONT"?el.getAttribute("color"):null;
+  const src=t==="IMG"?el.getAttribute("src"):null;
+
+  [...el.attributes].forEach(a=>el.removeAttribute(a.name));
+
+  const stil=Object.keys(tut).map(k=>`${k}:${tut[k]}`).join(";");
+  if(stil)el.setAttribute("style",stil);
+  if(colspan)el.setAttribute("colspan",colspan);
+  if(rowspan)el.setAttribute("rowspan",rowspan);
+  if(face)el.setAttribute("face",face);
+  if(renk)el.setAttribute("color",renk);
+  /* Ağdaki resimler çevrimdışı açılmaz; yalnızca gömülü olanları alıyoruz. */
+  if(t==="IMG"){ if(src&&/^data:image\//i.test(src))el.setAttribute("src",src); else el.remove() }
+}
+
+function yapistirTemizle(html){
+  const kap=document.createElement("div");
+  kap.innerHTML=html;
+  const gez=kok=>{
+    [...kok.children].forEach(el=>{
+      /* Word'ün <o:p> gibi ad alanlı ögeleri */
+      if(YP_SIL[el.tagName]||el.tagName.includes(":")){
+        if(YP_SIL[el.tagName])el.remove(); else ypAc(el);
+        return;
+      }
+      gez(el);
+      if(!YP_BLOK[el.tagName]&&!YP_ICI[el.tagName]){ypAc(el);return}
+      ypOzellik(el);
+    });
+  };
+  gez(kap);
+  return kap.innerHTML;
+}
+window.yapistirTemizle=yapistirTemizle;
+
+/* Panodan gelen metinde Türkçe harfler soru işaretine dönmüşse sessizce
+   kaydedilmesin. Bir dilekçede bu fark edilmeyen bir veri kaybıdır. */
+function ypCharsetDenetle(metin){
+  const soru=(metin.match(/\?/g)||[]).length;
+  if(soru<20||soru/metin.length<0.01)return;
+  showNotice('<span class="mk">!</span><span><b>Yapıştırılan metinde '+soru+
+    ' soru işareti var.</b><br>Türkçe harfler (ı, ğ, ş, İ) kopyalanırken '+
+    'kaybolmuş olabilir — bozulma kaynak uygulamada oluyor. Belgeyi UDF '+
+    'Editör\'de açıp buradan kopyalamayı deneyin.</span>');
+}
+
+sheet.addEventListener("paste",e=>{
+  e.preventDefault();
+  const pano=e.clipboardData||window.clipboardData;
+  const html=pano.getData("text/html");
+  const duz=pano.getData("text/plain");
+  ypCharsetDenetle(duz||"");
+  if(html){
+    const temiz=yapistirTemizle(html);
+    if(temiz.trim()){document.execCommand("insertHTML",false,temiz);touch();return}
+  }
+  document.execCommand("insertText",false,duz);
+  touch();
+});
 
 
 /* ---- klavye: Tab sekme eklesin, odak degistirmesin ---- */
