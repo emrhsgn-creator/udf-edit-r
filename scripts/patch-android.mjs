@@ -120,6 +120,7 @@ public class YazdirPlugin extends Plugin {
     @PluginMethod
     public void yazdir(final PluginCall call) {
         final String ad = call.getString("ad", "belge");
+        final boolean yatay = Boolean.TRUE.equals(call.getBoolean("yatay", false));
         getActivity().runOnUiThread(new Runnable() {
             @Override
             public void run() {
@@ -128,8 +129,14 @@ public class YazdirPlugin extends Plugin {
                             .getSystemService(Context.PRINT_SERVICE);
                     PrintDocumentAdapter adapter =
                             getBridge().getWebView().createPrintDocumentAdapter(ad);
+                    /* Kenar boşluklarını CSS'teki @page veriyor; yazıcıdan
+                       sıfır isteniyor ki iki kez uygulanmasın. Yatay belgeye
+                       dikey kağıt verilirse satırlar sığmaz ve sayfa sayısı
+                       artar. */
                     PrintAttributes attrs = new PrintAttributes.Builder()
-                            .setMediaSize(PrintAttributes.MediaSize.ISO_A4)
+                            .setMediaSize(yatay
+                                    ? PrintAttributes.MediaSize.ISO_A4.asLandscape()
+                                    : PrintAttributes.MediaSize.ISO_A4)
                             .setMinMargins(PrintAttributes.Margins.NO_MARGINS)
                             .build();
                     pm.print(ad, adapter, attrs);

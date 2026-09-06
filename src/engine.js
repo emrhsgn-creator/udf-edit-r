@@ -359,6 +359,22 @@ function applyPage(){
   applyZoom();
   fitSheet();
 }
+/* Yazdırma sayfa kuralı.
+
+   Kenar boşlukları @page'e yazılıyor ki HER sayfada uygulansın. Kağıda
+   padding vermek yalnızca ilk ve son sayfayı etkiliyor; aradaki sayfaların
+   üstü ve altı boşluksuz kalıyor ve kırılma noktaları UYAP'ınkinden
+   kayıyordu. Yön de belgeden alınıyor: yatay belgeye dikey A4 verilirse
+   satırlar sığmaz ve sayfa sayısı artar. */
+function yazdirKurali(){
+  const p=doc.page;
+  let st=$("printPage");
+  if(!st){st=document.createElement("style");st.id="printPage";document.head.appendChild(st)}
+  st.textContent="@page{size:A4 "+(p.orient===0?"landscape":"portrait")+
+    ";margin:"+p.mt+"pt "+p.mr+"pt "+p.mb+"pt "+p.ml+"pt}";
+}
+window.yazdirKurali=yazdirKurali;
+
 function applyZoom(){
   document.documentElement.style.setProperty("--zoom",(doc.zoom/100).toFixed(2));
   $("stZoom").textContent="%"+doc.zoom;$("zoomR").value=doc.zoom;

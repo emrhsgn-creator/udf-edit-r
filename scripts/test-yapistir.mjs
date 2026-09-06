@@ -91,5 +91,19 @@ ok(/İŞÇİ/.test(dosyadan) && /ığşİĞŞ/.test(dosyadan), "dosyadan gelen T
 ok(/<strong>/i.test(dosyadan), "dosyadan gelen kalın korunuyor");
 ok(!dosyadan.includes("?"), "dosyadan gelen metinde soru işareti yok");
 
+/* Yazdırma sayfa kuralı: kenar boşlukları ve yön belgeden gelmeli.
+   Kağıda padding vermek yalnızca ilk ve son sayfayı etkiliyordu. */
+w.doc.page = {w:595.28,h:841.89,mt:70,mr:60,mb:50,ml:40,orient:1};
+w.yazdirKurali();
+const kural = w.document.getElementById("printPage").textContent;
+ok(/@page/.test(kural), "@page kuralı yazılıyor");
+ok(/margin:\s*70pt\s+60pt\s+50pt\s+40pt/.test(kural), "kenar boşlukları belgeden geliyor");
+ok(/portrait/.test(kural), "dikey belge portrait");
+
+w.doc.page.orient = 0;
+w.yazdirKurali();
+ok(/landscape/.test(w.document.getElementById("printPage").textContent),
+   "yatay belge landscape");
+
 console.log(fail ? `\n${fail} sınama başarısız.` : "\nYapıştırma sınaması geçti.");
 process.exit(fail ? 1 : 0);

@@ -133,21 +133,19 @@
      çıkan ekrandaki "PDF olarak kaydet" dosyayı cihaza yazıyor. */
   window.exportPdf = function () {
     var ad = String(doc.name || "belge").replace(/\.udf$/i, "");
-    var eski = document.body.dataset.view;
-    document.body.dataset.view = "page";
-    setTimeout(function () {
-      if (!Yazdir) {
-        document.body.dataset.view = eski;
-        bildir('<span class="mk">!</span><span>Yazdırma bileşeni bulunamadı. ' +
-          'Uygulamayı yeni sürümle güncelleyin.</span>');
-        return;
-      }
-      Yazdir.yazdir({ ad: ad })
-        .catch(function (e) {
-          bildir('<span class="mk">!</span><span><b>Yazdırma açılamadı.</b><br>' +
-            String(e && e.message || e) + '</span>');
-        })
-        .then(function () { document.body.dataset.view = eski; });
-    }, 150);
+    if (!Yazdir) {
+      bildir('<span class="mk">!</span><span>Yazdırma bileşeni bulunamadı. ' +
+        'Uygulamayı yeni sürümle güncelleyin.</span>');
+      return;
+    }
+    /* Kenar boşluklarını ve yönü belgeden alan @page kuralını yaz. Yazdırma
+       biçimi artık ekrandaki görünüm kipinden bağımsız; kipi değiştirmeye
+       gerek yok. */
+    if (window.yazdirKurali) window.yazdirKurali();
+    Yazdir.yazdir({ ad: ad, yatay: doc.page.orient === 0 })
+      .catch(function (e) {
+        bildir('<span class="mk">!</span><span><b>Yazdırma açılamadı.</b><br>' +
+          String(e && e.message || e) + '</span>');
+      });
   };
 })();

@@ -206,14 +206,27 @@ fieldset.fs legend{font:12.5px var(--ui);color:#3A3A3A;padding:0 5px}
 .hits{font-size:11px;color:#5A6470;margin:-6px 0 10px}
 input[type=file]{display:none}
 
-@page{size:A4;margin:0}
+/* Gerçek kenar boşlukları yazdırmadan önce JS ile yazılıyor (yazdirKurali).
+   Buradaki yalnızca yedek. */
+@page{size:A4;margin:56.7pt}
 @media print{
   body{background:#fff}
   .title,.tabs,.ribbon,.status,.notice,.scrim,.panel{display:none!important}
   main{overflow:visible;padding:0;background:#fff}
-  .sheet{zoom:1!important;width:100%!important;border:0;box-shadow:none;
-    padding:var(--mt) var(--mr) var(--mb) var(--ml)!important}
-  .sheet [data-udf=pagebreak]{break-after:page;border:0;color:transparent}
+  .wrap{display:block}
+  /* Kenar boşlukları @page'e taşındı. Kağıdın padding'i yalnızca ilk ve son
+     sayfada boşluk bırakıyordu; aradaki sayfaların üstü ve altı bitişik
+     çıkıyor, bu da bölünme yerlerini kaydırıyordu.
+     min-height ve max-width da sıfırlanıyor: biri fazladan boş sayfa
+     doğuruyor, diğeri metni dar bir sütuna sıkıştırıp sayfa sayısını
+     artırıyordu. Ekrandaki sayfa ayırıcı çizgiler de kağıda basılmamalı. */
+  .sheet{zoom:1!important;width:auto!important;max-width:none!important;
+    min-height:0!important;border:0;box-shadow:none;
+    padding:0!important;background-image:none!important}
+  /* Sayfa sonu işareti ekranda çizgili bir şerit; yazdırırken yer kaplarsa
+     kırılma noktası kayar. */
+  .sheet [data-udf=pagebreak]{break-after:page;border:0;color:transparent;
+    margin:0!important;padding:0!important;height:0;line-height:0;overflow:hidden}
   .sheet td[data-nb="1"]{border:0!important}
 }
 </style>
@@ -810,6 +823,22 @@ function applyPage(){
   applyZoom();
   fitSheet();
 }
+/* Yazdırma sayfa kuralı.
+
+   Kenar boşlukları @page'e yazılıyor ki HER sayfada uygulansın. Kağıda
+   padding vermek yalnızca ilk ve son sayfayı etkiliyor; aradaki sayfaların
+   üstü ve altı boşluksuz kalıyor ve kırılma noktaları UYAP'ınkinden
+   kayıyordu. Yön de belgeden alınıyor: yatay belgeye dikey A4 verilirse
+   satırlar sığmaz ve sayfa sayısı artar. */
+function yazdirKurali(){
+  const p=doc.page;
+  let st=$("printPage");
+  if(!st){st=document.createElement("style");st.id="printPage";document.head.appendChild(st)}
+  st.textContent="@page{size:A4 "+(p.orient===0?"landscape":"portrait")+
+    ";margin:"+p.mt+"pt "+p.mr+"pt "+p.mb+"pt "+p.ml+"pt}";
+}
+window.yazdirKurali=yazdirKurali;
+
 function applyZoom(){
   document.documentElement.style.setProperty("--zoom",(doc.zoom/100).toFixed(2));
   $("stZoom").textContent="%"+doc.zoom;$("zoomR").value=doc.zoom;
