@@ -80,7 +80,7 @@
       .replace(/\.udf$/i, "").replace(/[\/\\:*?"<>|]/g, "_") + ".udf";
     // Kaydetmeden önce doğrula: üretilen dosya editördeki metnin tamamını
     // içermiyorsa sessizce eksik kaydetmek yerine durup uyarıyoruz.
-    var r = await window.udfUret();
+    var r = await window.kaydedilecek();
     if (!r.ok) {
       bildir('<span class="mk">!</span><span><b>Belge eksik kaydedilecekti, ' +
         'kaydetme durduruldu.</b><br>Editörde ' + r.beklenen + ' karakter var, ' +
@@ -124,6 +124,28 @@
         String(e && e.message || e) + '</span>');
     }
   }
+
+  /* ---- Birden çok dosyayı paylaş (Toplu İmzala, Gönder) ----
+     Dosyalar önbellek klasörüne yazılır, sistemin paylaşım sayfası açılır:
+     Dosyalar'a kaydet, Drive, WhatsApp, e-posta... */
+  window.paylas = async function (dosyalar) {
+    var Share = P.Share;
+    if (!Share || !Filesystem) {
+      for (var i = 0; i < dosyalar.length; i++) {
+        var v = await blobToB64(dosyalar[i].blob);
+        await Dosya.farkliKaydet({ ad: dosyalar[i].ad, veri: v }).catch(function () {});
+      }
+      return;
+    }
+    var uris = [];
+    for (var j = 0; j < dosyalar.length; j++) {
+      var w = await Filesystem.writeFile({ path: "paylas/" + dosyalar[j].ad,
+        data: await blobToB64(dosyalar[j].blob), directory: "CACHE", recursive: true });
+      uris.push(w.uri);
+    }
+    try { await Share.share({ files: uris, dialogTitle: "İmzalı belgeler" }); }
+    catch (e) { if (!/cancel/i.test(String(e && e.message))) throw e; }
+  };
 
   window.saveUdf = function (asName) { return kaydet(asName, false); };
   window.saveUdfAs = function (asName) { return kaydet(asName, true); };

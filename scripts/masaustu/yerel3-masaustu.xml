@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8" ?> 
+
+<template format_id="1.8" >
+<content><![CDATA[Duz x1 y2 z3
+def
+
+
+]]></content><properties><pageFormat mediaSizeName="1" leftMargin="42.525000000000006" rightMargin="42.525000000000006" topMargin="42.525000000000006" bottomMargin="42.52500000000006" paperOrientation="1" headerFOffset="20.0" footerFOffset="20.0" /></properties>
+<elements resolver="hvl-default" >
+<paragraph Alignment="1"><content bold="true" startOffset="0" length="7" /><content subscript="true" strikethrough="true" bold="true" startOffset="7" length="3" /><content superscript="true" bold="true" startOffset="10" length="3" /></paragraph><paragraph><content superscript="true" bold="true" startOffset="13" length="3" /><content bold="true" startOffset="16" length="1" /></paragraph><paragraph><content startOffset="17" length="1" /></paragraph>
+</elements>
+<styles><style name="default" description="Geçerli" family="Dialog" size="12" bold="false" italic="false" foreground="-13421773" FONT_ATTRIBUTE_KEY="javax.swing.plaf.FontUIResource[family=Dialog,name=Dialog,style=plain,size=12]" /><style name="hvl-default" family="Times New Roman" size="12" description="Gövde" /></styles>
+</template>

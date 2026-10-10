@@ -8,7 +8,7 @@
     "android:prepare": "npm run build && cap add android || true && node scripts/patch-android.mjs && cap sync android",
     "android:build": "npm run android:prepare && cd android && ./gradlew assembleDebug",
     "build": "node src/build.mjs",
-    "test": "npm run build && node scripts/test-codec.mjs && node scripts/test-editor.mjs && node scripts/test-fidelity.mjs"
+    "test": "npm run build && node scripts/test-codec.mjs && node scripts/test-editor.mjs && node scripts/test-fidelity.mjs && node scripts/test-imza.mjs && node scripts/test-masaustu.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.0.0",
@@ -20,6 +20,8 @@
   },
   "devDependencies": {
     "@capacitor/cli": "^8.0.0",
+    "@fontsource/arimo": "^5.3.0",
+    "@fontsource/tinos": "^5.3.0",
     "jsdom": "^30.0.1",
     "jszip": "^3.10.1"
   },

@@ -10,8 +10,10 @@ const PALETTE=["#000000","#333333","#666666","#999999","#FFFFFF","#B22222","#C00
                "#FF9900","#FFC000","#FFFF00","#92D050","#00B050","#00B0F0","#0070C0","#003366",
                "#7030A0","#FF00FF","#FFCCCC","#FFE699","#FFF2CC","#D9EAD3","#CFE2F3","#EAD1DC"];
 
-const doc={name:"isimsiz.UDF",kaynakUri:null,sayfaHam:null,dirty:false,loaded:false,fore:"#FF1B0F",back:"#FFFF00",zoom:125,
-  page:{w:595.28,h:841.89,mt:56.7,mr:56.7,mb:56.7,ml:56.7,orient:1}};
+/* Yeni belge, masaüstü editörün "Yeni" belgesiyle aynı: 1,5 cm kenar boşlukları. */
+const YENI_SAYFA=()=>({w:595.28,h:841.89,mt:42.525000000000006,mr:42.525000000000006,mb:42.52500000000006,ml:42.525000000000006,orient:1});
+const doc={name:"isimsiz.UDF",kaynakUri:null,sayfaHam:null,udfHam:null,dirty:false,loaded:false,fore:"#FF1B0F",back:"#FFFF00",zoom:125,
+  page:YENI_SAYFA()};
 
 const store={
   async get(k){try{const r=await window.storage.get(k);return r?JSON.parse(r.value):null}catch(_){return null}},
@@ -222,16 +224,24 @@ function sayfaNesnesi(){
 }
 window.sayfaNesnesi=sayfaNesnesi;
 
+/* Editörün düz metni: kaydedilen dosya geri okunduğunda aynısı çıkmalı. */
+function govdeMetni(kok){
+  const k=kok.cloneNode(true);
+  k.querySelectorAll('[data-udf="pagebreak"]').forEach(x=>x.remove());
+  return (k.textContent||"").replace(/[\s\u00A0\u200B]+/g,"");
+}
 async function udfUret(){
-  const html=editorToUdfHtml();
-  const blob=await window.UDF.toUdf(html,sayfaNesnesi());
+  const xml=window.UdfBicim.udfYaz(sheet,doc.udfHam,doc.page,doc.dirty);
+  const z=new JSZip(); z.file("content.xml",xml);
+  const blob=await z.generateAsync({type:"blob",compression:"DEFLATE"});
   let ok=true, beklenen=0, gelen=0;
   try{
-    const geri=await window.UDF.toHtml(await blob.arrayBuffer());
-    beklenen=sadeMetin(html).length; gelen=sadeMetin(geri).length;
-    ok=(sadeMetin(html)===sadeMetin(geri));
-  }catch(_){ ok=true }          // doğrulama yapılamadıysa kaydetmeyi engelleme
-  return {blob,ok,beklenen,gelen};
+    const d=document.createElement("div");
+    d.innerHTML=window.UdfBicim.udfOku(xml).html;
+    const a=govdeMetni(sheet), b=govdeMetni(d);
+    beklenen=a.length; gelen=b.length; ok=(a===b);
+  }catch(_){ ok=false }
+  return {blob,ok,beklenen,gelen,xml};
 }
 window.udfUret=udfUret;
 window.sadeMetin=sadeMetin;
@@ -246,6 +256,24 @@ async function openFile(file){
   hideNotice();
   try{
     const ab=await file.arrayBuffer();
+    // Önce masaüstüyle birebir okuyucu; çözemezse eski codec
+    try{
+      const xml=await (await JSZip.loadAsync(ab)).file("content.xml").async("string");
+      const r=window.UdfBicim.udfOku(xml);
+      const sf={}; for(const [k,v] of (r.ham.sayfa||[])) sf[k]=parseFloat(v);
+      doc.page=YENI_SAYFA();
+      if(sf.leftMargin!==undefined)doc.page.ml=sf.leftMargin;
+      if(sf.rightMargin!==undefined)doc.page.mr=sf.rightMargin;
+      if(sf.topMargin!==undefined)doc.page.mt=sf.topMargin;
+      if(sf.bottomMargin!==undefined)doc.page.mb=sf.bottomMargin;
+      if(sf.paperOrientation!==undefined)doc.page.orient=sf.paperOrientation;
+      doc.sayfaHam=sf; doc.udfHam=r.ham;
+      load(udfHtmlToEditor(r.html),file.name);
+      window.UdfBicim.imzalariKaydet(sheet);
+      await window.imzaYukle(ab);
+      return;
+    }catch(e){ console.warn("UDF okuyucu:",e) }
+    doc.udfHam=null;
     const html=await window.UDF.toHtml(ab);
     // Sayfa düzeni codec'in HTML katmanında taşınmıyor; arşivden ayrıca okunuyor.
     const sf=await window.UDF.sayfaOku(ab);
@@ -258,6 +286,7 @@ async function openFile(file){
       doc.sayfaHam=sf;                       // diğer alanlar aynen geri yazılsın
     }
     load(udfHtmlToEditor(html),file.name);
+    await window.imzaYukle(ab);
   }catch(e){
     showNotice(`<span class="mk">!</span><span><b>Dosya açılamadı.</b> ${esc(String(e.message||e))}</span>`);
   }
@@ -266,11 +295,12 @@ function load(html,name){
   doc.name=name;doc.loaded=true;sheet.innerHTML=html;
   $("empty").hidden=true;$("wrap").hidden=false;
   $("fname").textContent="Doküman Editörü — "+name;
-  applyPage();setDirty(false);stats();saveRecent();layoutTabs();
+  applyPage();if(document.body.dataset.view==="page")fitPage();
+  setDirty(false);stats();saveRecent();layoutTabs();
 }
 async function saveUdf(asName){
   const name=String(asName||doc.name).replace(/\.udf$/i,"")+".udf";
-  const r=await udfUret();
+  const r=await window.kaydedilecek();
   if(!r.ok){ kayipUyar(r); return }
   const blob=r.blob;
 
@@ -296,7 +326,7 @@ function tamamla(name){
   doc.name=name;$("fname").textContent="Doküman Editörü — "+name;
   setDirty(false);saveRecent();
 }
-async function saveRecent(){await store.set("recent:"+doc.name,{name:doc.name,html:sheet.innerHTML,at:Date.now(),page:doc.page})}
+async function saveRecent(){await store.set("recent:"+doc.name,{name:doc.name,html:sheet.innerHTML,at:Date.now(),page:doc.page,udfHam:doc.udfHam})}
 async function loadRecent(){
   const keys=await store.list("recent:");if(!keys.length)return;
   const items=(await Promise.all(keys.map(k=>store.get(k)))).filter(Boolean).sort((a,b)=>b.at-a.at).slice(0,6);
@@ -304,12 +334,12 @@ async function loadRecent(){
   $("recent").hidden=false;$("recentList").innerHTML="";
   items.forEach(it=>{const b=document.createElement("button");
     b.innerHTML=`${esc(it.name)}<span>${new Date(it.at).toLocaleDateString("tr-TR")}</span>`;
-    b.onclick=()=>{if(it.page)doc.page=it.page;load(it.html,it.name)};
+    b.onclick=()=>{if(it.page)doc.page=it.page;doc.imza=null;doc.udfHam=it.udfHam||null;load(it.html,it.name)};
     $("recentList").appendChild(b)});
 }
 
 /* ================= DURUM ================= */
-function setDirty(v){doc.dirty=v;$("stMode").textContent=v?"Değişti":"Ekle"}
+function setDirty(v){doc.dirty=v;$("stMode").textContent=v?"Değişti":"Ekle";if(window.imzaDurumu)imzaDurumu()}
 function stats(){
   const txt=sheet.innerText||"";
   $("stPara").textContent="Paragraf : "+sheet.querySelectorAll("p,li").length;
@@ -320,7 +350,148 @@ function stats(){
 /* Sayfa sayısı yalnızca açık sayfa sonlarından hesaplanıyordu; belge doğal
    taşmayla dokuz sayfa olsa bile 1/1 görünüyordu. Artık içerik yüksekliği
    gerçek sayfa yüksekliğine bölünerek bulunuyor. */
+/* ================= SAYFALAMA =================
+   Sayfa görünümünde içerik, masaüstü editördeki gibi sayfalara bölünür:
+   yazılabilir alanın altına taşan SATIR (paragrafın tamamı değil) bir sonraki
+   sayfanın üst kenar boşluğundan devam eder; tablolar satır satır bölünür;
+   elle eklenen sayfa sonu kalan sayfayı doldurur.
+   Bunun için araya yalnızca görünümde var olan boşluk ögeleri
+   ([data-udf="sb"]) konur. Bunlar metin içermez, dosyaya yazılmaz, yazdırırken
+   gizlenir ve her yeniden sayfalamada silinip baştan hesaplanır. */
+const SB_SEC='[data-udf="sb"]';
+function sbKaldir(){
+  const ebeveyn=new Set();
+  sheet.querySelectorAll(SB_SEC).forEach(m=>{ if(m.tagName!=="TR") ebeveyn.add(m.parentNode); m.remove() });
+  ebeveyn.forEach(e=>{ if(e&&e.isConnected) e.normalize() });
+}
+/* Seçim, paragraf içi karakter konumu olarak saklanır: boşluk ögeleri silinip
+   metin düğümleri birleşince düğüm/ofset geçersizleşir. */
+function secimKaydet(){
+  const s=getSelection();
+  if(!s.rangeCount||!sheet.contains(s.anchorNode)) return null;
+  const nokta=(node,off)=>{
+    const blok=(node.nodeType===1?node:node.parentElement).closest("p,li,td,div")||sheet;
+    if(blok.matches&&blok.matches(SB_SEC)) return null;
+    const r=document.createRange(); r.setStart(blok,0);
+    try{ r.setEnd(node,off) }catch(_){ return null }
+    return {blok,n:r.toString().length};
+  };
+  return {a:nokta(s.anchorNode,s.anchorOffset),f:nokta(s.focusNode,s.focusOffset)};
+}
+function secimGeriYukle(k){
+  if(!k||!k.a||!k.f||!k.a.blok.isConnected||!k.f.blok.isConnected) return;
+  const bul=({blok,n})=>{
+    const w=document.createTreeWalker(blok,NodeFilter.SHOW_TEXT); let t;
+    while((t=w.nextNode())){ if(n<=t.length) return [t,n]; n-=t.length }
+    return [blok,blok.childNodes.length];
+  };
+  const [an,ao]=bul(k.a), [fn,fo]=bul(k.f);
+  try{ getSelection().setBaseAndExtent(an,ao,fn,fo) }catch(_){}
+}
+function sbYeni(){
+  const m=document.createElement("span");
+  m.dataset.udf="sb"; m.contentEditable="false";
+  m.style.cssText="display:inline-block;width:100%;height:0;vertical-align:top";
+  return m;
+}
+function sayfala(){
+  const k=secimKaydet();
+  sbKaldir();
+  const pb=[...sheet.querySelectorAll('[data-udf="pagebreak"]')];
+  pb.forEach(x=>x.style.height="");
+  if(document.body.dataset.view!=="page"){ sheet.style.minHeight=""; secimGeriYukle(k); return null }
+  const p=doc.page,land=p.orient===0, PX=96/72;
+  const ph=(land?p.w:p.h)*PX, mt=p.mt*PX, mb=p.mb*PX, zoom=(doc.zoom||100)/100;
+  let s0=sheet.getBoundingClientRect().top;
+  const y=v=>(v-s0)/zoom;
+  const alt=v=>Math.floor(v/ph)*ph+ph-mb;                 // bulunduğu sayfanın yazılabilir alt sınırı
+  const sonraki=v=>(Math.floor(v/ph)+1)*ph+mt;            // sonraki sayfanın ilk satırı
+  // Bir paragrafın karakterleri (sekme ögesinin \t'i dahil)
+  const karakterler=blok=>{
+    const out=[], w=document.createTreeWalker(blok,NodeFilter.SHOW_TEXT); let t;
+    while((t=w.nextNode())){
+      if(t.parentElement.closest("table")!==blok.closest("table")) continue;   // iç içe tablo
+      for(let i=0;i<t.length;i++) out.push([t,i]);
+    }
+    return out;
+  };
+  const r=document.createRange();
+  const kutu=([t,i])=>{ r.setStart(t,i); r.setEnd(t,i+1); const b=r.getClientRects(); const x=b.length?b[b.length-1]:r.getBoundingClientRect(); return {ust:y(x.top),alt:y(x.bottom)} };
+  const sbKoy=(t,i,blok)=>{
+    const m=sbYeni();
+    if(t){ const sag=t.splitText(i); sag.parentNode.insertBefore(m,sag) }
+    else blok.insertBefore(m,blok.firstChild);
+    const m0=y(m.getBoundingClientRect().top);
+    m.style.height=Math.max(0,sonraki(m0)-m0)+"px";
+  };
+  // Bloklar belge sırasıyla
+  const bloklar=[];
+  const topla=kok=>{
+    for(const el of kok.children){
+      if(el.matches(SB_SEC)) continue;
+      if(el.dataset.udf==="pagebreak"){ bloklar.push(el); continue }
+      if(el.tagName==="UL"||el.tagName==="OL"){ for(const li of el.children) if(li.tagName==="LI") bloklar.push(li); continue }
+      if(el.tagName==="TABLE"){ for(const tr of el.rows) bloklar.push(tr); continue }
+      bloklar.push(el);
+    }
+  };
+  topla(sheet);
+  for(const B of bloklar){
+    if(B.dataset.udf==="pagebreak"){
+      B.style.height="0px";
+      const v=y(B.getBoundingClientRect().top);
+      B.style.height=Math.max(8,sonraki(v)-v)+"px";
+      continue;
+    }
+    const rb=B.getBoundingClientRect();
+    let ust=y(rb.top), ab=y(rb.bottom);
+    if(ab<=alt(ust)+0.5) continue;                        // sayfaya sığıyor
+    if(B.tagName==="TR"){
+      if(ab-ust>ph-mt-mb) continue;                       // sayfadan uzun satır: bölünemez
+      const sut=[...B.cells].reduce((t,c)=>t+(c.colSpan||1),0)||1;
+      const m=document.createElement("tr");
+      m.dataset.udf="sb"; m.contentEditable="false";
+      m.innerHTML=`<td colspan="${sut}" style="border:none!important;padding:0;height:${Math.max(0,sonraki(ust)-ust)}px"></td>`;
+      B.parentNode.insertBefore(m,B);
+      continue;
+    }
+    // Paragraf: taşan satırı bul, önüne boşluk koy; paragraf birden çok
+    // sayfaya yayılıyorsa her sayfa için tekrarla.
+    let ch=karakterler(B), bas=0, koruma=0;
+    if(!ch.length){ sbKoy(null,0,B); continue }
+    while(koruma++<200){
+      // ilk satırın sayfası: o satırın alt sınırını aşan ilk karakter
+      const ilk=kutu(ch[bas]), sinir=alt(ilk.ust);
+      let lo=bas, hi=ch.length;                             // [lo,hi) — alt>sinir olan ilk karakter
+      while(lo<hi){ const mid=(lo+hi)>>1; if(kutu(ch[mid]).alt>sinir+0.5) hi=mid; else lo=mid+1 }
+      if(lo>=ch.length) break;
+      // taşan karakterin satır başı
+      const satirUst=kutu(ch[lo]).ust;
+      let s=lo; while(s>bas&&Math.abs(kutu(ch[s-1]).ust-satirUst)<2) s--;
+      if(s===bas&&bas>0) break;                            // satır tek başına sayfaya sığmıyor
+      const [t,i]=ch[s];
+      sbKoy(i===0?t:t,i,B);
+      ch=karakterler(B); bas=Math.min(s,ch.length-1);    // metin düğümü bölündü: listeyi yenile
+      // boşluktan sonraki ilk karakter
+      while(bas<ch.length-1&&kutu(ch[bas]).ust<sonraki(satirUst)-2) bas++;
+    }
+  }
+  sheet.style.minHeight="";
+  const sayfa=Math.max(1,Math.ceil((sheet.scrollHeight-2)/ph));
+  sheet.style.minHeight=(sayfa*ph)+"px";
+  secimGeriYukle(k);
+  return {ph,sayfa,zoom};
+}
+window.sayfala=sayfala;
+const sayfaSonlari=sayfala;
 function sayfaBilgisi(){
+  const ss=sayfaSonlari();
+  if(ss){
+    let simdi=1;
+    const el=curPara();
+    if(el) simdi=Math.min(ss.sayfa,Math.floor(((el.getBoundingClientRect().top-sheet.getBoundingClientRect().top)/ss.zoom)/ss.ph)+1);
+    return Math.max(1,simdi)+" / "+ss.sayfa;
+  }
   const p=doc.page,land=p.orient===0;
   const sayfaPt=(land?p.w:p.h)-p.mt-p.mb;      // yazılabilir yükseklik
   const zoom=(doc.zoom||100)/100;
@@ -347,6 +518,9 @@ function fitSheet(){
   if(document.body.dataset.view==="write"){
     const w=sheet.clientWidth||660;
     document.documentElement.style.setProperty("--sh",Math.round(w*A4_ORAN)+"px");
+    // Kenar boşlukları kâğıt genişliğiyle orantılı (A4 = 595 nk)
+    const land=doc.page.orient===0, sayfaPx=(land?doc.page.h:doc.page.w)*(96/72);
+    document.documentElement.style.setProperty("--k",Math.min(1,w/sayfaPx).toFixed(3));
   }
 }
 function applyPage(){
@@ -356,8 +530,26 @@ function applyPage(){
   sheet.style.setProperty("--mt",p.mt+"pt");sheet.style.setProperty("--mr",p.mr+"pt");
   sheet.style.setProperty("--mb",p.mb+"pt");sheet.style.setProperty("--ml",p.ml+"pt");
   $("stPaper").textContent=(land?"A4 Yatay":"A4 Kâğıt");
+  cetvel();
   applyZoom();
   fitSheet();
+}
+/* Masaüstü editördeki yatay cetvel: 0 sol kenar boşluğunda, kenar boşlukları gri,
+   yarım cm'de kısa, cm'de uzun çizgi ve numara. Yalnızca A4 görünümünde. */
+function cetvel(){
+  const p=doc.page,land=p.orient===0, gen=land?p.h:p.w, CMPT=28.3465;
+  const sol=p.ml, sag=gen-p.mr, y=[];
+  y.push(`<rect x="0" y="0" width="${gen}" height="14" fill="#D9D9D9"/>`,
+         `<rect x="${sol}" y="0" width="${sag-sol}" height="14" fill="#FFFFFF"/>`);
+  for(let c=-Math.floor(sol/CMPT*2)/2; sol+c*CMPT<=gen; c+=.5){
+    const x=(sol+c*CMPT).toFixed(2), tam=Number.isInteger(c);
+    if(tam&&c!==0) y.push(`<text x="${x}" y="10.5" font-size="7.5" text-anchor="middle" fill="#333">${Math.abs(c)}</text>`);
+    else y.push(`<line x1="${x}" x2="${x}" y1="${tam?2:5}" y2="${tam?12:9}" stroke="#555" stroke-width=".6"/>`);
+  }
+  y.push(`<path d="M${sol-3.5} 0h7l-3.5 4z" fill="#2F3BD6"/><path d="M${sol-3.5} 14h7l-3.5-4z" fill="#555"/>`,
+         `<path d="M${sag-3} 14h6l-3-4z" fill="#E0302A"/>`);
+  const c=$("cetvel");
+  c.innerHTML=`<svg viewBox="0 0 ${gen} 14" width="${gen}pt" height="14pt" xmlns="http://www.w3.org/2000/svg">${y.join("")}</svg>`;
 }
 function applyZoom(){
   document.documentElement.style.setProperty("--zoom",(doc.zoom/100).toFixed(2));
@@ -390,20 +582,20 @@ addEventListener("resize",()=>{if(document.body.dataset.view==="page")fitPage();
    devreye giriyor; o durumda sekme kendi ögesinde tutulup genişliği ölçülüyor. */
 function layoutTabs(){
   const zoom=(doc.zoom||100)/100;
-  sheet.querySelectorAll("p[data-tabs],li[data-tabs]").forEach(el=>{
+  const paralar=new Set([...sheet.querySelectorAll('[data-udf="tab"]')].map(t=>t.closest("p,li,div,td")).filter(Boolean));
+  paralar.forEach(el=>{
     const tabs=[...el.querySelectorAll('[data-udf="tab"]')];
     if(!tabs.length)return;
-    const stops=el.dataset.tabs.split(" ").map(parseFloat).filter(v=>!isNaN(v));
-    if(!stops.length)return;
+    const stops=(el.dataset.tabs||"").split(" ").map(parseFloat).filter(v=>!isNaN(v));
     const cs=getComputedStyle(el), padL=parseFloat(cs.paddingLeft)||0;
     const base=el.getBoundingClientRect();
     tabs.forEach(t=>{
       t.style.display="inline-block"; t.style.width="0px";
       const r=t.getBoundingClientRect();
       const x=((r.left-base.left-padL)/zoom)*0.75;
-      const hedef=stops.find(v=>v>x+0.5);
-      if(hedef!==undefined)t.style.width=Math.max(2,hedef-x)+"pt";
-      else{ t.style.display=""; t.style.width="" }   // durak bitti: CSS ızgarasına bırak
+      let hedef=stops.find(v=>v>x+0.5);
+      if(hedef===undefined) hedef=(Math.floor((x+0.5)/72)+1)*72;   // varsayılan duraklar: her 72 nk
+      t.style.width=Math.max(1,hedef-x)+"pt";
     });
   });
 }
@@ -630,7 +822,7 @@ function sync(){
 document.addEventListener("selectionchange",()=>{if(document.activeElement===sheet)sync()});
 
 let tId;
-function touch(){setDirty(true);layoutTabsGec();clearTimeout(tId);tId=setTimeout(()=>{stats();saveRecent()},600)}
+function touch(){setDirty(true);if(window.imzaDegisti)imzaDegisti();layoutTabsGec();clearTimeout(tId);tId=setTimeout(()=>{stats();saveRecent()},600)}
 
 sheet.addEventListener("input",()=>{
   // DİKKAT: burada DOM'u yeniden yazmıyoruz. Önceki sürümde her tuş vuruşunda
@@ -770,7 +962,7 @@ function paragraphDialog(){
   const p=curPara();
   const g=k=>p?(parseFloat(p.style[k])||0):0;
   const cur={
-    lh: p&&parseFloat(p.style.lineHeight)?parseFloat(p.style.lineHeight):1.0,
+    lh: p?1+(parseFloat(p.style.getPropertyValue("--ls"))||0):1.0,
     before: pt2cm(g("marginTop")), after: pt2cm(g("marginBottom")),
     ml: pt2cm(g("marginLeft")), mr: pt2cm(g("marginRight")),
     ti: pt2cm(g("textIndent")),
@@ -816,7 +1008,7 @@ function paragraphDialog(){
       $("dPrev").innerHTML=Array.from({length:4},()=>`<p>${LOREM}</p>`).join("");
       [...$("dPrev").children].forEach((el,i)=>{
         el.style.textAlign=align;
-        el.style.lineHeight=st.lh;
+        el.style.lineHeight=""; el.style.lineHeight=String(1.168*st.lh);
         el.style.textIndent=(st.ti/CM*3)+"px";
         el.style.marginLeft=(st.ml/CM*3)+"px";
         el.style.marginRight=(st.mr/CM*3)+"px";
@@ -844,7 +1036,7 @@ function paragraphDialog(){
     $("dOk").onclick=()=>{
       const v=readVals(), ha=num("dHa");
       hedefler.forEach(el=>{
-        el.style.lineHeight=v.lh;
+        el.style.lineHeight=""; el.style.setProperty("--ls",String(+(v.lh-1).toFixed(4)));
         el.style.marginTop=v.before+"pt";
         el.style.marginBottom=v.after+"pt";
         el.style.marginRight=v.mr+"pt";
@@ -881,7 +1073,7 @@ $("bCellBg").onclick=()=>colorPanel("Hücre rengi","#EEEEEE",c=>{const t=curCell
 $("bSpacing").onclick=()=>panel("Satır aralığı",
   `<div class="chips">${[1,1.15,1.5,2].map(v=>`<button data-v="${v}">${String(v).replace(".",",")}</button>`).join("")}</div>`,
   ()=>$("panel").querySelectorAll("[data-v]").forEach(b=>b.onclick=()=>{
-    eachPara(p=>p.style.lineHeight=b.dataset.v);closePanel();sheet.focus();touch()}));
+    eachPara(p=>{p.style.lineHeight="";p.style.setProperty("--ls",String(+(b.dataset.v-1).toFixed(4)))});closePanel();sheet.focus();touch()}));
 
 $("bParaFmt").onclick=paragraphDialog;
 const _oldParaPanel=()=>panel("Paragraf",
@@ -963,7 +1155,7 @@ $("bView").onclick=()=>{const w=document.body.dataset.view==="write";
   document.body.dataset.view=w?"page":"write";
   $("bView").classList.toggle("on",w);
   if(w)fitPage();else{doc.zoom=125;applyZoom()}
-  fitSheet();};
+  fitSheet();stats();};
 /* PDF çıktısı. Android WebView'da window.print() sessizce hiçbir şey yapmaz;
    uygulama içinde native-bridge bu fonksiyonun üzerine yazıp sistemin
    yazdırma servisini çağırıyor ("PDF olarak kaydet" oradan çıkıyor). */
@@ -987,8 +1179,8 @@ $("bSaveAs").onclick=()=>panel("Farklı kaydet",
 $("bOpen").onclick=$("bOpen2").onclick=()=>$("fUdf").click();
 $("fUdf").onchange=e=>{const f=e.target.files[0];if(f)openFile(f);e.target.value=""};
 $("bSave").onclick=()=>{if(doc.loaded)saveUdf()};
-const newDoc=()=>{hideNotice();doc.kaynakUri=null;doc.sayfaHam=null;doc.page={w:595.28,h:841.89,mt:56.7,mr:56.7,mb:56.7,ml:56.7,orient:1};
-  load('<p style="text-align:justify"><br></p>',"isimsiz.UDF");sheet.focus()};
+const newDoc=()=>{hideNotice();doc.kaynakUri=null;doc.imza=null;doc.sayfaHam=null;doc.udfHam=null;doc.kaynakXml=null;doc.page=YENI_SAYFA();
+  load('<p><br></p>',"isimsiz.UDF");sheet.focus()};
 $("bNew").onclick=newDoc;$("bNew2").onclick=newDoc;
 
 addEventListener("keydown",e=>{
@@ -1009,4 +1201,4 @@ window.doc=doc;
 window.fitSheet=fitSheet;
 window.applyPage=applyPage;
 
-loadRecent();applyZoom();fitSheet();layoutTabs();
+loadRecent();if(document.body.dataset.view==="page")fitPage();else applyZoom();fitSheet();layoutTabs();

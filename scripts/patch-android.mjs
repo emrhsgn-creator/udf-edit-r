@@ -3,9 +3,11 @@
      2) YazdirPlugin — WebView window.print() desteklemediği için PrintManager
      3) DosyaPlugin  — Android 11+ ortak klasörlere yazmaya izin vermiyor (EACCES),
                        bu yüzden kaydetme Storage Access Framework üzerinden
+     4) EimzaPlugin  — USB OTG ile takılı e-imza kartıyla imza (android-eklenti/)
+     5) KopruPlugin  — bilgisayardaki imza köprüsüne parmak izi sabitlemeli HTTPS
    android/ klasörü her derlemede sıfırdan üretildiği için bu betik her seferinde
    çalışır ve tekrar çalıştırıldığında hiçbir şeyi bozmaz. */
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, readdirSync } from "node:fs";
 
 const appId = JSON.parse(readFileSync("capacitor.config.json", "utf8")).appId;
 const javaDir = "android/app/src/main/java/" + appId.replace(/\./g, "/");
@@ -54,6 +56,18 @@ if (xml.includes("UDF_FILE_ASSOCIATION")) {
   xml = xml.replace(LAUNCHER, LAUNCHER + FILTERS);
   writeFileSync(MANIFEST, xml);
   console.log("Manifest yamalandı: .udf dosya ilişkilendirmesi eklendi.");
+}
+
+/* USB kart okuyucu: telefonda USB ana makine (OTG) desteği. Zorunlu değil —
+   OTG'siz telefonlar da uygulamayı kurabilsin, bilgisayar köprüsünü kullansın. */
+if (!xml.includes("android.hardware.usb.host")) {
+  const izin = xml.includes("android.permission.INTERNET") ? "" :
+    `<uses-permission android:name="android.permission.INTERNET" />
+    `;
+  xml = xml.replace("<application", `<uses-feature android:name="android.hardware.usb.host" android:required="false" />
+    ${izin}<application`);
+  writeFileSync(MANIFEST, xml);
+  console.log("Manifest yamalandı: USB ana makine özelliği.");
 }
 
 /* ---------------- 2) Java eklentileri ---------------- */
@@ -186,9 +200,17 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(YazdirPlugin.class);
         registerPlugin(DosyaPlugin.class);
+        registerPlugin(EimzaPlugin.class);
+        registerPlugin(KopruPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }
 `);
 
-console.log("Java eklentileri yazıldı: YazdirPlugin, DosyaPlugin.");
+/* Ayrı dosyalarda tutulan eklentiler (e-imza): paket adı yerine konur. */
+const ekler = readdirSync("android-eklenti").filter(f => f.endsWith(".java"));
+for (const f of ekler)
+  writeFileSync(javaDir + "/" + f,
+    readFileSync("android-eklenti/" + f, "utf8").replace(/__PAKET__/g, appId));
+
+console.log("Java eklentileri yazıldı: YazdirPlugin, DosyaPlugin, " + ekler.join(", ") + ".");
