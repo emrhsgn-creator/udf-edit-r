@@ -87,7 +87,7 @@ gs.removeAllRanges();                       // seçim kayboldu (asıl hata buydu
 
 d.getElementById("dOk").click();
 
-ok(hedef.style.lineHeight === "2", "satır aralığı uygulandı");
+ok(hedef.style.getPropertyValue("--ls") === "1", "satır aralığı uygulandı (2 satır = ek oran 1)");
 ok(Math.abs(parseFloat(hedef.style.marginTop) - 14.17) < 0.2, "önce 0,5cm = 14,17pt");
 ok(hedef.style.textAlign === "center", "hizalama uygulandı");
 // asılı girinti: gövde sağa (1+1=2cm), ilk satır sola taşar (-1cm)
@@ -120,8 +120,12 @@ ok(typeof w.udfUret === "function", "kaydetme doğrulaması tanımlı");
 ok(w.sadeMetin("<p>A<tab/>B</p>") === "AB", "metin karşılaştırıcı çalışıyor");
 
 // --- 12. Boş belgede kağıt tam sayfa mı? ----------------------------
+ok(d.body.dataset.view === "page", "masaüstü gibi sayfa görünümünde açılıyor");
+d.body.dataset.view = "write";                // yazı görünümünü ayrıca sına
 w.load('<p><br></p>', "isimsiz.UDF");
 const shVar = d.documentElement.style.getPropertyValue("--sh");
+const kVar = parseFloat(d.documentElement.style.getPropertyValue("--k"));
+ok(kVar > 0, "yazı görünümünde kenar boşlukları sıfırlanmıyor (oran " + kVar + ")");
 ok(shVar !== "", "yazı görünümünde sayfa yüksekliği hesaplanıyor");
 ok(parseInt(shVar) > 300, "boş belgede kağıt büzülmüyor: " + shVar);
 const phVar = sheet.style.getPropertyValue("--ph");
