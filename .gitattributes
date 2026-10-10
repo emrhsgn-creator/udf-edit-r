@@ -1,0 +1,3 @@
+# Masaüstü UYAP çıktıları bayt bayt karşılaştırılıyor: satır sonları değişmesin
+scripts/masaustu/** -text
+*.udf binary
