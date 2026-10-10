@@ -349,6 +349,43 @@ class KurulumIsleyici(BaseHTTPRequestHandler):
     def do_GET(self):
         with open(os.path.join(VERI, "kok.crt"), "rb") as f:
             pem = f.read()
+        if self.path.startswith("/kok.mobileconfig"):
+            # iOS'un yükleme önerdiği biçim: kök sertifikayı taşıyan yapılandırma profili
+            import uuid
+            sert = x509.load_pem_x509_certificate(pem)
+            der = sert.public_bytes(serialization.Encoding.DER)
+            iz = hashlib.sha256(der).hexdigest()
+            u1 = str(uuid.uuid5(uuid.NAMESPACE_URL, "udf-editor-kok-" + iz)).upper()
+            u2 = str(uuid.uuid5(uuid.NAMESPACE_URL, "udf-editor-profil-" + iz)).upper()
+            ad = sert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
+            ad_x = ad.replace("&", "&amp;").replace("<", "&lt;")
+            plist = f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>PayloadContent</key><array><dict>
+<key>PayloadCertificateFileName</key><string>UDF-Imza-Koprusu.cer</string>
+<key>PayloadContent</key><data>{base64.b64encode(der).decode()}</data>
+<key>PayloadDisplayName</key><string>{ad_x}</string>
+<key>PayloadIdentifier</key><string>tr.av.udfeditor.kok.{iz[:16]}</string>
+<key>PayloadType</key><string>com.apple.security.root</string>
+<key>PayloadUUID</key><string>{u1}</string>
+<key>PayloadVersion</key><integer>1</integer>
+</dict></array>
+<key>PayloadDescription</key><string>UDF Editör'ün bu bilgisayardaki e-imza köprüsüne güvenli (HTTPS) bağlanması için. Yalnızca yerel ağ adreslerinde geçerlidir.</string>
+<key>PayloadDisplayName</key><string>UDF Editör imza köprüsü</string>
+<key>PayloadIdentifier</key><string>tr.av.udfeditor.profil.{iz[:16]}</string>
+<key>PayloadRemovalDisallowed</key><false/>
+<key>PayloadType</key><string>Configuration</string>
+<key>PayloadUUID</key><string>{u2}</string>
+<key>PayloadVersion</key><integer>1</integer>
+</dict></plist>""".encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/x-apple-aspen-config")
+            self.send_header("Content-Length", str(len(plist)))
+            self.end_headers()
+            self.wfile.write(plist)
+            gunluk(f"iPhone profili indirildi: {self.client_address[0]}")
+            return
         if self.path.startswith("/kok.crt"):
             der = x509.load_pem_x509_certificate(pem).public_bytes(serialization.Encoding.DER)
             self.send_response(200)
@@ -368,10 +405,12 @@ a.b{{display:block;text-align:center;background:#2C99AE;color:#fff;padding:14px;
 li{{margin:8px 0}} code{{background:#eee;padding:2px 5px;border-radius:4px}}</style>
 <h2>UDF Editör — imza köprüsü</h2>
 <p><b>iPhone / iPad</b> için bir kerelik kurulum:</p>
-<p><a class=b href="/kok.crt">1. Sertifikayı indir</a></p>
+<p><a class=b href="/kok.mobileconfig">1. Profili indir</a></p>
+<p style="font-size:14px;color:#666">Bu sayfayı <b>Safari</b>'de açın (Chrome ya da başka bir uygulamanın içinde profil yüklenmez).
+Android/Windows için: <a href="/kok.crt">sertifika dosyası</a>.</p>
 <ol start=2>
 <li>"Bu web sitesi bir yapılandırma profili indirmeye çalışıyor" → <b>İzin Ver</b>.</li>
-<li><b>Ayarlar → Profil İndirildi</b> → <b>Yükle</b>.</li>
+<li><b>Ayarlar</b> → en üstteki <b>Profil İndirildi</b> (ya da <b>Genel → VPN ve Aygıt Yönetimi</b>) → <b>Yükle</b>. 8 dakika içinde yükleyin.</li>
 <li><b>Ayarlar → Genel → Hakkında → Sertifika Güvenilirlik Ayarları</b> → "UDF Editör Yerel İmza Köprüsü" için <b>tam güveni aç</b>.</li>
 <li>UDF Editör → <b>Araçlar → İmzala → Bilgisayardaki e-imza</b>: adres <code>{adres}:{HTTPS_PORT}</code> ve köprü penceresindeki eşleşme kodu.</li>
 </ol>
