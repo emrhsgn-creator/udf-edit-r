@@ -37,6 +37,12 @@ BASLANGIC = os.path.join(os.environ.get("APPDATA", ""), r"Microsoft\Windows\Star
 
 
 # ---------------------------------------------------------------- Windows açılışı
+def _uv():
+    """Pencere açmayan uv (uvw) varsa onu kullan: komut penceresi kapatılınca köprü de kapanmasın."""
+    import shutil
+    return shutil.which("uvw") or shutil.which("uv") or "uv"
+
+
 def otomatik_mi():
     return os.path.exists(BASLANGIC)
 
@@ -52,7 +58,7 @@ def otomatik_ayarla(acik):
     betik = os.path.abspath(__file__)
     vbs = ('Set s = CreateObject("WScript.Shell")\r\n'
            f's.CurrentDirectory = "{os.path.dirname(betik)}"\r\n'
-           f's.Run "uv run --gui-script ""{betik}"" --tepside", 0, False\r\n')
+           f's.Run """{_uv()}"" run --gui-script ""{betik}"" --tepside", 0, False\r\n')
     os.makedirs(os.path.dirname(BASLANGIC), exist_ok=True)
     with open(BASLANGIC, "w", encoding="utf-16") as f:   # WSH UTF-16 (BOM) okur: Türkçe yollar için
         f.write(vbs)
@@ -203,6 +209,11 @@ def main():
         except Exception:
             print("İmza köprüsü zaten çalışıyor.")
         return
+    if otomatik_mi():
+        try:
+            otomatik_ayarla(True)        # eski sürümün kaydını güncelle (uvw)
+        except OSError:
+            pass
     if "--arayuzsuz" in sys.argv:
         threading.Event().wait()
     else:
