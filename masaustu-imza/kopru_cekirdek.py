@@ -45,10 +45,15 @@ olaylar = queue.Queue()  # arayüze giden günlük satırları
 son_olaylar = collections.deque(maxlen=100)
 
 
+# Günlük satırlarının gideceği yer; gömülen uygulama değiştirebilir
+# (Uyap Asistan'da stdout Electron'la konuşmaya ayrılmış: logging'e gider).
+cikti = print
+
+
 def gunluk(s):
     satir = time.strftime("%H:%M:%S ") + s
     try:
-        print(satir, flush=True)
+        cikti(satir)
     except Exception:     # pythonw: konsol yok
         pass
     olaylar.put(satir)
@@ -432,6 +437,20 @@ Android/Windows için: <a href="/kok.crt">sertifika dosyası</a>.</p>
         self.wfile.write(b)
 
 
+class _OzelSunucu(ThreadingHTTPServer):
+    """Portu tek başına tutar. HTTPServer varsayılan olarak SO_REUSEADDR açar;
+    Windows'ta bu iki köprünün (bağımsız + Uyap Asistan) aynı porta bağlanmasına
+    izin verir ve istek rastgele birine gider. Ayrıca başka bir programın portu
+    ele geçirmesini de engeller."""
+    allow_reuse_address = False
+    daemon_threads = True
+
+    def server_bind(self):
+        if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
+
+
 def sunuculari_baslat():
     kok_anahtar, kok = kok_hazirla()
     adresler = yerel_adresler()
@@ -441,9 +460,9 @@ def sunuculari_baslat():
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     ctx.minimum_version = ssl.TLSVersion.TLSv1_2
     ctx.load_cert_chain(sp, kp)
-    https = ThreadingHTTPServer(("0.0.0.0", HTTPS_PORT), Isleyici)
+    https = _OzelSunucu(("0.0.0.0", HTTPS_PORT), Isleyici)
     https.socket = ctx.wrap_socket(https.socket, server_side=True)
-    kurulum = ThreadingHTTPServer(("0.0.0.0", KURULUM_PORT), KurulumIsleyici)
+    kurulum = _OzelSunucu(("0.0.0.0", KURULUM_PORT), KurulumIsleyici)
     for s in (https, kurulum):
         threading.Thread(target=s.serve_forever, daemon=True).start()
     return adresler, kok
