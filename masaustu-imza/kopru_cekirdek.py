@@ -15,6 +15,7 @@ import queue
 import secrets
 import socket
 import ssl
+import subprocess
 import sys
 import threading
 import time
@@ -231,6 +232,9 @@ class Durum:
             ayar_yaz(self.ayar)
         self.kart = Kart()
         self.parmak_izi = b""
+        self.ts_adi = None      # Tailscale adı (ör. buro-pc.tailxxxx.ts.net)
+        self.ts_ctx = None      # o adın gerçek (Let's Encrypt) sertifikası
+        self.ts_parmak_izi = b""
         self.hatalar = {}  # ip -> [zamanlar]
         self.kilit = threading.Lock()
         self.onay_iste = bool(self.ayar.get("onay_iste", False))
@@ -307,7 +311,9 @@ class Isleyici(BaseHTTPRequestHandler):
             # karşılaştırır; araya giren biri kodu bilmeden bunu üretemez.
             from urllib.parse import parse_qs, urlparse
             n = (parse_qs(urlparse(self.path).query).get("n") or [""])[0][:64]
-            kanit = hmac.new(kod_normal(D.kod).encode(), n.encode() + D.parmak_izi, hashlib.sha256).hexdigest()
+            # Bu bağlantıda sunulan sertifika (yerel ya da Tailscale)
+            pi = getattr(self.connection, "_kopru_pi", D.parmak_izi)
+            kanit = hmac.new(kod_normal(D.kod).encode(), n.encode() + pi, hashlib.sha256).hexdigest()
             return self._json(200, {"surum": SURUM, "kanit": kanit})
         if not self._yetki():
             return
@@ -460,6 +466,15 @@ def sunuculari_baslat():
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     ctx.minimum_version = ssl.TLSVersion.TLSv1_2
     ctx.load_cert_chain(sp, kp)
+
+    def sni(sok, ad, _ctx):
+        # Telefon Tailscale adıyla gelirse o adın gerçek sertifikası sunulur;
+        # IP ile gelirse yerel kök sertifikalı olan (iPhone profili, Android eşleşmesi).
+        if ad and D.ts_ctx and ad.lower() == D.ts_adi:
+            sok.context = D.ts_ctx
+            sok._kopru_pi = D.ts_parmak_izi
+    ctx.sni_callback = sni
+    threading.Thread(target=_tailscale_dongusu, daemon=True).start()
     https = _OzelSunucu(("0.0.0.0", HTTPS_PORT), Isleyici)
     https.socket = ctx.wrap_socket(https.socket, server_side=True)
     kurulum = _OzelSunucu(("0.0.0.0", KURULUM_PORT), KurulumIsleyici)
@@ -468,6 +483,82 @@ def sunuculari_baslat():
     return adresler, kok
 
 
+
+
+# ---------------------------------------------------------------- Tailscale
+# Telefon ofis ağı dışındayken köprüye Tailscale (özel VPN) üzerinden ulaşır.
+# Tailscale her bilgisayara ad.tailnet.ts.net adı ve o ada herkesçe güvenilen
+# sertifika verir ("HTTPS Certificates" açıksa); iPhone'a profil gerekmez.
+TAILSCALE = os.path.join(os.environ.get("ProgramFiles", r"C:\Program Files"), "Tailscale", "tailscale.exe")
+
+
+def _ts(*arg, zaman=60):
+    # stdin açıkça kapalı: konsolsuz (paketli) süreçte devralınan tanıtıcı geçersiz olabilir
+    return subprocess.run([TAILSCALE, *arg], stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=zaman,
+                          creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+
+
+_ts_neden = None
+
+
+def _ts_yok(neden):
+    global _ts_neden
+    if neden != _ts_neden:  # aynı nedeni her denemede yazma
+        _ts_neden = neden
+        gunluk("Tailscale kullanılamıyor: " + neden)
+
+
+def tailscale_adi():
+    """Tailscale çalışıyor ve sertifika alınabiliyorsa bilgisayarın adı."""
+    if not os.path.exists(TAILSCALE):
+        return _ts_yok("kurulu değil")
+    try:
+        r = _ts("status", "--json", zaman=15)
+        d = json.loads(r.stdout or "{}")
+    except Exception as e:
+        return _ts_yok(f"durum okunamadı ({e})")
+    if d.get("BackendState") != "Running":
+        return _ts_yok("bağlı değil (" + str(d.get("BackendState")) + ")")
+    alanlar = [a.lower().rstrip(".") for a in (d.get("CertDomains") or [])]
+    ad = ((d.get("Self") or {}).get("DNSName") or "").lower().rstrip(".")
+    if not ad or ad not in alanlar:
+        return _ts_yok("HTTPS sertifikaları açık değil (yönetim panelinde DNS → HTTPS Certificates)")
+    return ad
+
+
+def tailscale_hazirla():
+    """Sertifikayı alır/yeniler (Tailscale süresi yaklaşınca kendisi yeniler)."""
+    ad = tailscale_adi()
+    if not ad:
+        return False
+    sp, kp = os.path.join(VERI, "tailscale.crt"), os.path.join(VERI, "tailscale.key")
+    r = _ts("cert", "--cert-file", sp, "--key-file", kp, ad, zaman=180)
+    if r.returncode != 0 or not os.path.exists(sp):
+        gunluk("Tailscale sertifikası alınamadı: " + (r.stderr or r.stdout).strip()[:200])
+        return False
+    c = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    c.minimum_version = ssl.TLSVersion.TLSv1_2
+    c.load_cert_chain(sp, kp)
+    with open(sp, "rb") as f:
+        yaprak = x509.load_pem_x509_certificates(f.read())[0]
+    D.ts_parmak_izi = hashlib.sha256(yaprak.public_bytes(serialization.Encoding.DER)).digest()
+    yeni = D.ts_adi != ad
+    D.ts_adi, D.ts_ctx = ad, c
+    if yeni:
+        gunluk(f"Tailscale: https://{ad}:{HTTPS_PORT}")
+    return True
+
+
+def _tailscale_dongusu():
+    while True:
+        try:
+            tamam = tailscale_hazirla()
+        except Exception as e:
+            gunluk(f"Tailscale: {e}")
+            tamam = False
+        if not tamam:
+            D.ts_adi = D.ts_ctx = None
+        time.sleep(12 * 3600 if tamam else 120)
 
 
 # ---------------------------------------------------------------- dış arayüz
@@ -506,7 +597,8 @@ def ozet():
         return {"calisiyor": False}
     return {
         "calisiyor": True, "surum": SURUM,
-        "adresler": [f"{a}:{HTTPS_PORT}" for a in yerel_adresler()],
+        "adresler": ([f"{D.ts_adi}:{HTTPS_PORT}"] if D.ts_ctx else []) + [f"{a}:{HTTPS_PORT}" for a in yerel_adresler()],
+        "tailscale": f"{D.ts_adi}:{HTTPS_PORT}" if D.ts_ctx else None,
         "kod": D.kod, "kurulum": kurulum_adresi(),
         "onay_iste": D.onay_iste, "olaylar": list(son_olaylar)[-30:],
     }
