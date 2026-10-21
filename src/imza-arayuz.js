@@ -117,8 +117,15 @@ async function kopruIstek(yol,yontem,govde){
   const K=eklenti("Kopru");
   let durum, metin;
   if(K){
-    const r=await K.istek({url:`https://${adres}${yol}`,yontem,govde:govde?JSON.stringify(govde):null,
-      kod:a.kod,parmakIzi:a.parmakIzi||null});
+    const iste=p=>K.istek({url:`https://${adres}${yol}`,yontem,govde:govde?JSON.stringify(govde):null,
+      kod:a.kod,parmakIzi:p||null});
+    let r;
+    try{ r=await iste(a.parmakIzi) }
+    catch(e){
+      // Sertifika yenilenmiş (ör. Tailscale'inki ~2 ayda bir): kodla yeniden doğrula, bir kez daha dene
+      if(!/sertifikası değişmiş/.test(String(e.message||e))) throw e;
+      await kopruEsles(); r=await iste(kopruAyar().parmakIzi);
+    }
     durum=r.durum; metin=r.govde;
   }else{
     let y;
