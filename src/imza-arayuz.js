@@ -202,7 +202,7 @@ function imzalaPenceresi(ayar){
         <div id="iPc" class="ipc">
           <div class="frow"><label for="iAdr">Bilgisayar adresi:</label><input id="iAdr" placeholder="192.168.1.20:5976" value="${esc(kayit.adres||"")}" autocapitalize="off" autocomplete="off" inputmode="url"></div>
           <div class="frow"><label for="iKod">Eşleşme kodu:</label><input id="iKod" placeholder="ABCD-EFGH-JKLM" value="${esc(kayit.kod||"")}" autocapitalize="characters" autocomplete="off"></div>
-          <div class="ipuc">Bilgisayarda <b>UDF-Imza-Koprusu</b>'nu açın; adres ve kod penceresinde yazar.</div>
+          <div class="ipuc">Adres ve kod bilgisayarda <b>Uyap Asistan → Ayarlar → Telefondan e-imza</b> bölümünde yazar. Ofis dışındaysanız Tailscale açıkken <b>…ts.net</b> adresini girin.</div>
         </div>
       </fieldset>
       <fieldset class="fs"><legend>Sertifika</legend>

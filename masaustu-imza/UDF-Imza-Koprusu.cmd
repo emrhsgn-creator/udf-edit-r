@@ -1,7 +1,7 @@
 @echo off
-rem UDF Editör — bilgisayar e-imza köprüsü. Çift tıklayın; pencereyi açık tutun.
-rem Gerekli: uv (https://docs.astral.sh/uv/) ve e-imza kartınızın sürücüsü.
+rem UDF Editor - bilgisayar e-imza koprusu. Cift tiklayin; saatin yaninda simge olarak durur.
+rem Komut penceresi acilmaz: uvw (pencere acmayan uv) kullanilir.
 cd /d "%~dp0"
-where uv >nul 2>nul || (echo uv bulunamadi. Kurulum: powershell -c "irm https://astral.sh/uv/install.ps1 ^| iex" & pause & exit /b 1)
-uv run --script kopru.py
-if errorlevel 1 pause
+where uvw >nul 2>nul && (start "" uvw run --gui-script kopru.py & exit /b 0)
+where uv >nul 2>nul || (echo uv bulunamadi. Kurulum: powershell -c "irm https://astral.sh/uv/install.ps1 ^| iex" ^& pause ^& exit /b 1)
+start "" /min uv run --gui-script kopru.py
