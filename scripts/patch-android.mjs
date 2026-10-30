@@ -5,6 +5,7 @@
                        bu yüzden kaydetme Storage Access Framework üzerinden
      4) EimzaPlugin  — USB OTG ile takılı e-imza kartıyla imza (android-eklenti/)
      5) KopruPlugin  — bilgisayardaki imza köprüsüne parmak izi sabitlemeli HTTPS
+     6) UyapGirisPlugin + UyapGirisServisi — tablette UYAP Avukat Portal'a e-imzayla giriş
    android/ klasörü her derlemede sıfırdan üretildiği için bu betik her seferinde
    çalışır ve tekrar çalıştırıldığında hiçbir şeyi bozmaz. */
 import { readFileSync, writeFileSync, mkdirSync, readdirSync } from "node:fs";
@@ -68,6 +69,23 @@ if (!xml.includes("android.hardware.usb.host")) {
     ${izin}<application`);
   writeFileSync(MANIFEST, xml);
   console.log("Manifest yamalandı: USB ana makine özelliği.");
+}
+
+/* UYAP girişi hizmeti: tablette Chrome'daki Avukat Portal'a localhost:5975'ten
+   e-imza verir (bilgisayardaki Adalet E-imza programının yerine). Kullanıcı
+   Chrome'dayken de çalışması için ön plan hizmeti; tür "connectedDevice"
+   (USB kart okuyucu). Android 14+ bu tür için CHANGE_NETWORK_STATE gibi bir
+   önkoşul izni ister. */
+if (!xml.includes("UyapGirisServisi")) {
+  const izinler = ["FOREGROUND_SERVICE", "FOREGROUND_SERVICE_CONNECTED_DEVICE", "CHANGE_NETWORK_STATE", "POST_NOTIFICATIONS"]
+    .filter(i => !xml.includes(`android.permission.${i}"`))
+    .map(i => `<uses-permission android:name="android.permission.${i}" />\n    `).join("");
+  xml = xml.replace("<application", izinler + "<application");
+  xml = xml.replace("</application>", `    <service android:name="${appId}.UyapGirisServisi" android:exported="false"
+            android:foregroundServiceType="connectedDevice" />
+    </application>`);
+  writeFileSync(MANIFEST, xml);
+  console.log("Manifest yamalandı: UYAP girişi hizmeti.");
 }
 
 /* ---------------- 2) Java eklentileri ---------------- */
@@ -202,6 +220,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(DosyaPlugin.class);
         registerPlugin(EimzaPlugin.class);
         registerPlugin(KopruPlugin.class);
+        registerPlugin(UyapGirisPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

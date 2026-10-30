@@ -486,6 +486,7 @@ input[type=file]{display:none}
       <button class="b big" id="bSign"><svg class="c" viewBox="0 0 24 24"><path fill="#fff" stroke="#F59E2B" stroke-width="1.6" d="M3 3h14v18H3z"/><path fill="#2F6DB5" stroke="#1F4F8A" d="m17 3 4 4-9 9-5 1 1-5z"/><path stroke="#F59E2B" stroke-width="1.4" fill="none" d="M5 19c2-1 3-2 5-2"/></svg>İmzala</button>
       <button class="b big" disabled title="Mobil imza (GSM) bu sürümde yok"><svg class="c" viewBox="0 0 24 24"><path fill="#2F4D7A" d="M7 2h9v20H7z"/><path fill="#7EC8E3" d="M8.5 4h6v12h-6z"/><circle cx="17" cy="17" r="4" fill="#D93A30"/><path stroke="#fff" stroke-width="1.4" d="m15.5 17 1 1 2-2"/></svg>Dokümanı<br>Mobil İmzala</button>
       <button class="b big" id="bApdu" title="Açıkken imza bu telefona takılı kartla (APDU), kapalıyken bilgisayardaki e-imzayla atılır"><svg class="c" viewBox="0 0 24 24"><path fill="#F5C842" stroke="#B88A12" d="M4 6h16v12H4z"/><path fill="#E0A818" stroke="#8C6610" d="M8 9h6v6H8z"/><path stroke="#8C6610" d="M11 9v6M8 12h6"/></svg>APDU<br>Etkin</button>
+      <button class="b big" id="bUyapGiris" title="Açıkken bu cihazın tarayıcısında UYAP Avukat Portal'a takılı e-imza kartıyla (Adalet E-İmza ile Giriş) girebilirsiniz"><svg class="c" viewBox="0 0 24 24"><path fill="#fff" stroke="#6B7C93" d="M3 10h12v11H3z"/><path fill="#6B7C93" d="M2 10 9 5l7 5z"/><path stroke="#6B7C93" d="M6 12v7M9 12v7M12 12v7"/><circle cx="17.5" cy="7.5" r="3.2" fill="#F5C842" stroke="#B88A12"/><path stroke="#B88A12" stroke-width="1.8" d="M19.6 9.6 22 12M21 11l-1.2 1.2"/></svg>UYAP<br>Girişi</button>
       <div class="col sm">
         <button class="b" id="bSignInfo"><svg class="c" viewBox="0 0 24 24"><circle cx="12" cy="9" r="6" fill="#F59E2B" stroke="#C9751A"/><path fill="#D93A30" d="m8 14-2 8 4-2 2 2 1-7zM16 14l2 8-4-2-2 2-1-7z"/></svg>İmzalar</button>
         <button class="b" id="bCerts"><svg class="c" viewBox="0 0 24 24"><path fill="#fff" stroke="#6B7C93" d="M4 3h12l4 4v14H4z"/><circle cx="11" cy="13" r="3" fill="#D93A30"/><path stroke="#9AA6B5" d="M7 7h6"/></svg>Sertifikalar</button>
@@ -2727,8 +2728,15 @@ async function kopruIstek(yol,yontem,govde){
   const K=eklenti("Kopru");
   let durum, metin;
   if(K){
-    const r=await K.istek({url:`https://${adres}${yol}`,yontem,govde:govde?JSON.stringify(govde):null,
-      kod:a.kod,parmakIzi:a.parmakIzi||null});
+    const iste=p=>K.istek({url:`https://${adres}${yol}`,yontem,govde:govde?JSON.stringify(govde):null,
+      kod:a.kod,parmakIzi:p||null});
+    let r;
+    try{ r=await iste(a.parmakIzi) }
+    catch(e){
+      // Sertifika yenilenmiş (ör. Tailscale'inki ~2 ayda bir): kodla yeniden doğrula, bir kez daha dene
+      if(!/sertifikası değişmiş/.test(String(e.message||e))) throw e;
+      await kopruEsles(); r=await iste(kopruAyar().parmakIzi);
+    }
     durum=r.durum; metin=r.govde;
   }else{
     let y;
@@ -2812,7 +2820,7 @@ function imzalaPenceresi(ayar){
         <div id="iPc" class="ipc">
           <div class="frow"><label for="iAdr">Bilgisayar adresi:</label><input id="iAdr" placeholder="192.168.1.20:5976" value="${esc(kayit.adres||"")}" autocapitalize="off" autocomplete="off" inputmode="url"></div>
           <div class="frow"><label for="iKod">Eşleşme kodu:</label><input id="iKod" placeholder="ABCD-EFGH-JKLM" value="${esc(kayit.kod||"")}" autocapitalize="characters" autocomplete="off"></div>
-          <div class="ipuc">Bilgisayarda <b>UDF-Imza-Koprusu</b>'nu açın; adres ve kod penceresinde yazar.</div>
+          <div class="ipuc">Adres ve kod bilgisayarda <b>Uyap Asistan → Ayarlar → Telefondan e-imza</b> bölümünde yazar. Ofis dışındaysanız Tailscale açıkken <b>…ts.net</b> adresini girin.</div>
         </div>
       </fieldset>
       <fieldset class="fs"><legend>Sertifika</legend>
@@ -2979,6 +2987,56 @@ $("bApdu").onclick=()=>{
   kaynakYaz(kaynakSecili()==="usb"?"pc":"usb");
 };
 apduDurumu();
+
+/* UYAP girişi: bu cihazın tarayıcısında Avukat Portal'a "Adalet E-İmza ile
+   Giriş". Android hizmeti (UyapGirisServisi) bilgisayardaki Adalet E-imza
+   programının yerini tutar; portal kartı localhost:5975'ten ister. */
+async function uyapGirisDurumu(){
+  const G=eklenti("UyapGiris"), b=$("bUyapGiris");
+  if(!G||!b) return;
+  try{ b.classList.toggle("on",!!(await G.durum()).acik) }catch(_){}
+}
+/* Hizmetin son işlemleri: giriş olmazsa nerede takıldığını gösterir (PIN yazılmaz). */
+async function uyapGirisGunlugu(){
+  const G=eklenti("UyapGiris"); if(!G) return;
+  let metin=""; try{ metin=(await G.gunluk()).metin }catch(e){ metin=String(e.message||e) }
+  panel("UYAP girişi — son işlemler",
+    `<pre style="white-space:pre-wrap;font:12px/1.45 monospace;max-height:50vh;overflow:auto;margin:0;user-select:text">${esc(metin||"Henüz kayıt yok.")}</pre>
+    <div class="pact"><button class="wb" id="ugY">Yenile</button><button class="wb pri" id="ugK">Kapat</button></div>`,
+    ()=>{ $("ugK").onclick=closePanel; $("ugY").onclick=uyapGirisGunlugu });
+}
+$("bUyapGiris").onclick=async()=>{
+  const G=eklenti("UyapGiris"), b=$("bUyapGiris");
+  if(!G){
+    showNotice('<span class="mk">!</span><span>UYAP girişi yalnızca Android uygulamasında var. '+
+      'Bilgisayarda Adalet Bakanlığı\'nın Adalet E-imza programını kullanın.</span>');
+    return;
+  }
+  try{
+    const d=b.classList.contains("on")?await G.kapat():await G.ac();
+    b.classList.toggle("on",!!d.acik);
+    if(d.hata){
+      showNotice(`<span class="mk">!</span><span>UYAP girişi açılamadı: ${esc(d.hata)} <button class="wb" id="nUyapG">Günlük</button></span>`);
+      $("nUyapG").onclick=uyapGirisGunlugu;
+      return;
+    }
+    if(!d.acik){
+      showNotice(`<span class="mk">✓</span><span>UYAP girişi kapatıldı. <button class="wb" id="nUyapG">Günlük</button></span>`);
+      $("nUyapG").onclick=uyapGirisGunlugu;
+      return;
+    }
+    showNotice(`<span class="mk" style="color:#1E7B34">✓</span><span>UYAP girişi açık. Kart okuyucu takılıyken tarayıcıda `+
+      `Avukat Portal'da <b>Adalet E-İmza ile Giriş</b>'i seçin; PIN'i oradaki alana yazın. `+
+      `İşiniz bitince bu düğmeyle ya da bildirimden kapatın. `+
+      `<button class="wb" id="nUyap">Portalı aç</button> <button class="wb" id="nUyapG">Günlük</button></span>`);
+    $("nUyap").onclick=()=>{ G.portaliAc().catch(e=>showNotice(`<span class="mk">!</span><span>${esc(String(e.message||e))}</span>`)) };
+    $("nUyapG").onclick=uyapGirisGunlugu;
+  }catch(e){ showNotice(`<span class="mk">!</span><span>${esc(String(e.message||e))}</span>`) }
+};
+// Hizmet bildirimden kapatılmış olabilir: uygulamaya dönünce düğmeyi güncelle.
+document.addEventListener("visibilitychange",()=>{ if(!document.hidden) uyapGirisDurumu() });
+uyapGirisDurumu();
+
 $("bSignInfo").onclick=imzaBilgisi;
 $("stImza").onclick=imzaBilgisi;
 window.topluImzala=topluImzala;
