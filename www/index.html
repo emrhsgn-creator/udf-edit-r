@@ -1136,10 +1136,10 @@ async function openFile(file){
       load(udfHtmlToEditor(r.html),file.name);
       window.UdfBicim.imzalariKaydet(sheet);
       await window.imzaYukle(ab);
-      return;
+      return true;
     }catch(e){ console.warn("UDF okuyucu:",e) }
-    doc.udfHam=null;
     const html=await window.UDF.toHtml(ab);
+    doc.udfHam=null;                         // açılamayan dosya, açık belgeye dokunmasın
     // Sayfa düzeni codec'in HTML katmanında taşınmıyor; arşivden ayrıca okunuyor.
     const sf=await window.UDF.sayfaOku(ab);
     if(sf){
@@ -1152,12 +1152,15 @@ async function openFile(file){
     }
     load(udfHtmlToEditor(html),file.name);
     await window.imzaYukle(ab);
+    return true;
   }catch(e){
     showNotice(`<span class="mk">!</span><span><b>Dosya açılamadı.</b> ${esc(String(e.message||e))}</span>`);
+    return false;
   }
 }
 function load(html,name){
-  doc.name=name;doc.loaded=true;sheet.innerHTML=html;
+  // Yeni belge eski dosyanın adresini devralmasın: Kaydet onun üzerine yazardı.
+  doc.name=name;doc.loaded=true;doc.kaynakUri=null;sheet.innerHTML=html;
   $("empty").hidden=true;$("wrap").hidden=false;
   $("fname").textContent="Doküman Editörü — "+name;
   applyPage();if(document.body.dataset.view==="page")fitPage();
