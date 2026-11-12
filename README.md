@@ -138,6 +138,18 @@ grup panelleri `#FAFAFA→#DDE6F0` degrade, vurgu `#FF1B0F`. Sekme düzeni de
 aynı: Dosya, Giriş, Düzenle, Ekle, Biçim, Araçlar, Görünüm — Tablo sekmesi
 masaüstündeki gibi yalnızca imleç bir tablodayken beliriyor. Cetvel yok.
 
+## Dosya açma
+
+Belge uygulamaya üç yoldan gelir: dosyaya dokunma ya da **Birlikte aç**, **Paylaş** ve
+uygulama içinden **Aç**. UDF'nin kayıtlı MIME türü yoktur, `content://` adresleri de
+çoğu zaman dosya adını taşımaz (`…/document/msf:123`); bu yüzden manifest hem MIME
+türüne (`application/octet-stream`, zip) hem uzantıya bakar, dosyanın adı da
+sağlayıcıdan sorulur (`DosyaPlugin`).
+
+Bunun bedeli: uygulama, `.zip` ve türü bilinmeyen dosyaların **Birlikte aç** listesinde
+de görünür. UDF olmayan dosyada "Dosya açılamadı" der; açık belgeye ve Kaydet'in
+hedefine dokunmaz.
+
 ## Kaydetme
 
 Android 11 ile gelen kapsamlı depolama, uygulamaların ortak klasörlere doğrudan
@@ -199,7 +211,7 @@ paragrafa ait değildir, görünümü etkilemez.
 
 ## Sınamalar
 
-`npm test` beş takım çalıştırır:
+`npm test` yedi takım çalıştırır:
 
 - `test-codec.mjs` — codec'i tarayıcı ortamını taklit ederek (Buffer global
   değilken) sınar.
@@ -212,6 +224,11 @@ paragrafa ait değildir, görünümü etkilemez.
   `cms -verify` ile doğrular; imzalı belgenin editörde tanınmasını, değişmeden
   bayt bayt korunmasını, değişince imzanın kalkmasını sınar.
 - `test-masaustu.mjs` — masaüstünde oluşturulan belgelerle birebirliği sınar.
+- `test-gelen-dosya.mjs` — Birlikte aç / Paylaş ile gelen dosyanın açılmasını ve
+  Kaydet'in yanlış dosyanın üzerine yazmamasını sınar.
+- `test-duzeltmeler.mjs` — gerçek kullanımda çıkan hatalar: değiştir → Kaydet → İmzala
+  son hâli imzalar; paragrafa sarılmamış metin dosyaya girer; Android Geri tuşu
+  değişiklik bayrağını bozmaz.
 
 Geçmişteki hataların çoğu tam olarak bu noktalardaydı.
 

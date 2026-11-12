@@ -84,7 +84,12 @@ async function imzaYukle(ab){
 async function kaydedilecek(){
   if(doc.imza&&!doc.dirty) return {ok:true, blob:new Blob([doc.imza.zip],{type:"application/octet-stream"})};
   if(doc.imza){ doc.imza=null; imzaDurumu() }
-  return udfUret();
+  const r=await udfUret();
+  // Değişmemiş belge imzalanırken kaynakXml aynen imzalanır; o yüzden burada
+  // dosyanın şimdiki hâliyle güncellenmeli. Yoksa "değiştir → Kaydet → İmzala"
+  // sırasında, açılıştaki eski içerik imzalanıyordu.
+  if(r.ok) doc.kaynakXml=new TextEncoder().encode(r.xml);
+  return r;
 }
 window.kaydedilecek=kaydedilecek;
 
@@ -117,8 +122,15 @@ async function kopruIstek(yol,yontem,govde){
   const K=eklenti("Kopru");
   let durum, metin;
   if(K){
-    const r=await K.istek({url:`https://${adres}${yol}`,yontem,govde:govde?JSON.stringify(govde):null,
-      kod:a.kod,parmakIzi:a.parmakIzi||null});
+    const iste=p=>K.istek({url:`https://${adres}${yol}`,yontem,govde:govde?JSON.stringify(govde):null,
+      kod:a.kod,parmakIzi:p||null});
+    let r;
+    try{ r=await iste(a.parmakIzi) }
+    catch(e){
+      // Sertifika yenilenmiş (ör. Tailscale'inki ~2 ayda bir): kodla yeniden doğrula, bir kez daha dene
+      if(!/sertifikası değişmiş/.test(String(e.message||e))) throw e;
+      await kopruEsles(); r=await iste(kopruAyar().parmakIzi);
+    }
     durum=r.durum; metin=r.govde;
   }else{
     let y;
@@ -127,8 +139,9 @@ async function kopruIstek(yol,yontem,govde){
         headers:Object.assign({"X-Eslesme":a.kod},govde?{"Content-Type":"application/json"}:{}),
         body:govde?JSON.stringify(govde):undefined});
     }catch(e){
-      throw new Error("Bilgisayardaki köprüye ulaşılamadı. Köprü açık mı, telefon aynı Wi-Fi'de mi? "+
-        "iPhone/iPad'de köprünün sertifikası kurulu ve tam güven açık olmalı (köprü penceresindeki kare kod).");
+      throw new Error("Bilgisayardaki köprüye ulaşılamadı. Bilgisayarda Uyap Asistan açık mı? Telefon aynı Wi-Fi'de "+
+        "değilse Tailscale açık ve adres …ts.net olmalı. Yerel adreste iPhone/iPad'e köprünün sertifikası kurulu "+
+        "ve tam güven açık olmalı (Uyap Asistan → Telefondan e-imza'daki kare kod).");
     }
     durum=y.status; metin=await y.text();
   }
@@ -369,6 +382,56 @@ $("bApdu").onclick=()=>{
   kaynakYaz(kaynakSecili()==="usb"?"pc":"usb");
 };
 apduDurumu();
+
+/* UYAP girişi: bu cihazın tarayıcısında Avukat Portal'a "Adalet E-İmza ile
+   Giriş". Android hizmeti (UyapGirisServisi) bilgisayardaki Adalet E-imza
+   programının yerini tutar; portal kartı localhost:5975'ten ister. */
+async function uyapGirisDurumu(){
+  const G=eklenti("UyapGiris"), b=$("bUyapGiris");
+  if(!G||!b) return;
+  try{ b.classList.toggle("on",!!(await G.durum()).acik) }catch(_){}
+}
+/* Hizmetin son işlemleri: giriş olmazsa nerede takıldığını gösterir (PIN yazılmaz). */
+async function uyapGirisGunlugu(){
+  const G=eklenti("UyapGiris"); if(!G) return;
+  let metin=""; try{ metin=(await G.gunluk()).metin }catch(e){ metin=String(e.message||e) }
+  panel("UYAP girişi — son işlemler",
+    `<pre style="white-space:pre-wrap;font:12px/1.45 monospace;max-height:50vh;overflow:auto;margin:0;user-select:text">${esc(metin||"Henüz kayıt yok.")}</pre>
+    <div class="pact"><button class="wb" id="ugY">Yenile</button><button class="wb pri" id="ugK">Kapat</button></div>`,
+    ()=>{ $("ugK").onclick=closePanel; $("ugY").onclick=uyapGirisGunlugu });
+}
+$("bUyapGiris").onclick=async()=>{
+  const G=eklenti("UyapGiris"), b=$("bUyapGiris");
+  if(!G){
+    showNotice('<span class="mk">!</span><span>UYAP girişi yalnızca Android uygulamasında var. '+
+      'Bilgisayarda Adalet Bakanlığı\'nın Adalet E-imza programını kullanın.</span>');
+    return;
+  }
+  try{
+    const d=b.classList.contains("on")?await G.kapat():await G.ac();
+    b.classList.toggle("on",!!d.acik);
+    if(d.hata){
+      showNotice(`<span class="mk">!</span><span>UYAP girişi açılamadı: ${esc(d.hata)} <button class="wb" id="nUyapG">Günlük</button></span>`);
+      $("nUyapG").onclick=uyapGirisGunlugu;
+      return;
+    }
+    if(!d.acik){
+      showNotice(`<span class="mk">✓</span><span>UYAP girişi kapatıldı. <button class="wb" id="nUyapG">Günlük</button></span>`);
+      $("nUyapG").onclick=uyapGirisGunlugu;
+      return;
+    }
+    showNotice(`<span class="mk" style="color:#1E7B34">✓</span><span>UYAP girişi açık. Kart okuyucu takılıyken tarayıcıda `+
+      `Avukat Portal'da <b>Adalet E-İmza ile Giriş</b>'i seçin; PIN'i oradaki alana yazın. `+
+      `İşiniz bitince bu düğmeyle ya da bildirimden kapatın. `+
+      `<button class="wb" id="nUyap">Portalı aç</button> <button class="wb" id="nUyapG">Günlük</button></span>`);
+    $("nUyap").onclick=()=>{ G.portaliAc().catch(e=>showNotice(`<span class="mk">!</span><span>${esc(String(e.message||e))}</span>`)) };
+    $("nUyapG").onclick=uyapGirisGunlugu;
+  }catch(e){ showNotice(`<span class="mk">!</span><span>${esc(String(e.message||e))}</span>`) }
+};
+// Hizmet bildirimden kapatılmış olabilir: uygulamaya dönünce düğmeyi güncelle.
+document.addEventListener("visibilitychange",()=>{ if(!document.hidden) uyapGirisDurumu() });
+uyapGirisDurumu();
+
 $("bSignInfo").onclick=imzaBilgisi;
 $("stImza").onclick=imzaBilgisi;
 window.topluImzala=topluImzala;

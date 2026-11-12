@@ -22,49 +22,48 @@
       r.readAsDataURL(blob);
     });
   }
-  function nameFromUri(uri) {
-    try {
-      var n = decodeURIComponent(String(uri).split("?")[0].split("/").pop() || "");
-      n = n.replace(/[\/\\:*?"<>|]/g, "_");
-      if (n && /\.udf$/i.test(n)) return n;
-      if (n) return n.replace(/\.[^.]*$/, "") + ".udf";
-    } catch (e) {}
-    return "belge.udf";
+  function dosyaAdi(ham) {
+    var n = String(ham || "").split(/[\/\\]/).pop().replace(/[:*?"<>|]/g, "_");
+    if (!n) return "belge.udf";
+    return /\.udf$/i.test(n) ? n : n.replace(/\.[^.]*$/, "") + ".udf";
   }
   function bildir(html, ms) {
     showNotice(html);
     if (ms) setTimeout(hideNotice, ms);
   }
 
-  /* ---- Gelen dosyayı aç ---- */
-  var lastUri = null;
+  /* ---- Gelen dosyayı aç ----
+     Birlikte aç ve Paylaş aynı yoldan gelir (DosyaPlugin.handleOnNewIntent). */
   async function openUri(uri) {
-    if (!uri || uri === lastUri || /^https?:/i.test(uri)) return;
-    lastUri = uri;
+    if (!uri) return;
+    if (doc.dirty && !confirm('"' + doc.name + '" belgesinde kaydedilmemiş değişiklik var. ' +
+      'Yeni dosya açılsın mı?')) return;
     try {
-      var r = await Filesystem.readFile({ path: uri });
-      await openFile(new File([b64ToBytes(r.data)], nameFromUri(uri),
+      var r = await Dosya.oku({ uri: uri });
+      var acildi = await openFile(new File([b64ToBytes(r.veri)], dosyaAdi(r.ad),
         { type: "application/octet-stream" }));
-      doc.kaynakUri = uri;          // Kaydet aynı dosyanın üzerine yazmayı denesin
+      if (acildi) doc.kaynakUri = uri;   // Kaydet aynı dosyanın üzerine yazmayı denesin
     } catch (e) {
-      bildir('<span class="mk">!</span><span><b>Dosya okunamadı.</b><br>' +
-        'Dosyayı uygulamaya "Paylaş" ile göndermeyi ya da uygulama içinden ' +
-        '<b>Aç</b> ile seçmeyi deneyin.</span>');
+      bildir('<span class="mk">!</span><span><b>Dosya okunamadı.</b> ' +
+        esc(String(e && e.message || e)) + '<br>Uygulama içinden <b>Aç</b> ile ' +
+        'seçmeyi deneyin.</span>');
     }
   }
 
-  if (App) {
-    App.getLaunchUrl().then(function (r) { if (r && r.url) openUri(r.url); }).catch(function () {});
-    App.addListener("appUrlOpen", function (d) { if (d && d.url) openUri(d.url); });
+  if (Dosya) Dosya.addListener("dosyaGeldi", function (d) { return openUri(d && d.uri); });
 
+  if (App) {
+    var sonGeri = 0;
     App.addListener("backButton", function () {
       var dlg = document.getElementById("dlg"), pnl = document.getElementById("panel");
       if (dlg && dlg.classList.contains("on")) { closeDialog(); return; }
       if (pnl && pnl.classList.contains("on")) { closePanel(); return; }
-      if (doc.dirty) {
+      // İlk basışta uyarı, 4 sn içinde ikincide çıkış. "değişti" bayrağına
+      // dokunulmaz: sıfırlanınca Kaydet, imzalı belgenin eski hâlini yazıyordu.
+      if (doc.dirty && Date.now() - sonGeri > 4000) {
+        sonGeri = Date.now();
         bildir('<span class="mk">!</span><span>Kaydedilmemiş değişiklik var. ' +
-          'Çıkmadan önce <b>Kaydet</b>e dokunun.</span>', 4000);
-        doc.dirty = false;                     // ikinci geri tuşu çıkarsın
+          'Çıkmadan önce <b>Kaydet</b>e dokunun; çıkmak için yeniden <b>Geri</b>ye basın.</span>', 4000);
         return;
       }
       App.exitApp();

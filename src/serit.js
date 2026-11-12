@@ -93,9 +93,11 @@ $("bGoto").onclick=()=>panel("Sayfaya git",
       const n=Math.max(1,parseInt($("gN").value)||1); closePanel();
       if(document.body.dataset.view!=="page") $("bView").click();
       setTimeout(()=>{
-        const ph=parseFloat(getComputedStyle(sheet).getPropertyValue("--ph"))||sheet.offsetHeight;
+        // --ph punto; kaydırma piksel ister (1 nk = 96/72 px)
+        const ph=(parseFloat(getComputedStyle(sheet).getPropertyValue("--ph"))||841.89)*96/72;
         const z=parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--zoom"))||1;
-        $("main").scrollTop=sheet.offsetTop+(n-1)*ph*z;
+        const m=$("main"), ust=sheet.getBoundingClientRect().top-m.getBoundingClientRect().top+m.scrollTop;
+        m.scrollTop=ust+(n-1)*ph*z;
       },120);
     }});
 const SEMBOLLER="§ ₺ € $ £ ° ± × ÷ ≤ ≥ ≠ ≈ ‰ % « » “ ” ‘ ’ „ • · – — … ← → ↑ ↓ ⇒ ✓ ✗ © ® ™ ½ ¼ ¾ ¹ ² ³ µ Ω α β π Σ √ ∞ ¶ † ‡ Ç ç Ğ ğ İ ı Ö ö Ş ş Ü ü Â â Î î Û û".split(" ");
@@ -166,7 +168,8 @@ $("bHelp").onclick=()=>panel("Yardım",
   `<div class="fld" style="line-height:1.6">
    <b>İmzalama</b> — Araçlar → İmzala. <b>APDU Etkin</b> açıkken imza telefona takılı kartla atılır
    (USB-C/OTG adaptörü + kart okuyucu ya da token). Kapalıyken bilgisayardaki e-imza kullanılır:
-   bilgisayarda <b>UDF-Imza-Koprusu</b>'nu açın, penceresindeki adres ve eşleşme kodunu girin.<br>
+   adres ve eşleşme kodu bilgisayarda <b>Uyap Asistan → Ayarlar → Telefondan e-imza</b> bölümünde yazar;
+   ofis dışında Tailscale açıkken <b>…ts.net</b> adresi kullanılır.<br>
    <b>İmzalı belge</b> — Değiştirmeden kaydederseniz imza korunur. Değiştirirseniz imza kalkar;
    yeniden imzalamanız gerekir.<br>
    <b>Toplu İmzala</b> — Dosya → Toplu İmzala: birden çok UDF'yi tek PIN girişiyle imzalar.</div>

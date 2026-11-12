@@ -17,6 +17,8 @@ import java.util.Arrays;
 public class CcidOkuyucu implements AutoCloseable, AkisKart.Kanal {
 
     private static final int ZAMAN_ASIMI = 30000;
+    /* Okuyucuyu aynı anda tek iş açar (belge imzası ve UYAP girişi hizmeti). */
+    public static final Object KILIT = new Object();
 
     private final UsbDeviceConnection bag;
     private final UsbInterface arayuz;

@@ -49,7 +49,7 @@ public class EimzaPlugin extends Plugin {
             call.reject("Kart okuyucu bulunamadı. E-imza okuyucusunu/tokenını OTG adaptörüyle telefona takın.");
             return;
         }
-        Runnable yap = () -> is.execute(() -> {
+        Runnable yap = () -> is.execute(() -> { synchronized (CcidOkuyucu.KILIT) {
             CcidOkuyucu o = null;
             try {
                 o = new CcidOkuyucu(um(), d);
@@ -68,7 +68,7 @@ public class EimzaPlugin extends Plugin {
             } finally {
                 if (o != null) o.close();
             }
-        });
+        } });
         if (um().hasPermission(d)) { yap.run(); return; }
 
         final Context c = getContext();
