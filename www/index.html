@@ -1142,6 +1142,7 @@ async function openFile(file){
     doc.udfHam=null;                         // açılamayan dosya, açık belgeye dokunmasın
     // Sayfa düzeni codec'in HTML katmanında taşınmıyor; arşivden ayrıca okunuyor.
     const sf=await window.UDF.sayfaOku(ab);
+    doc.page=YENI_SAYFA(); doc.sayfaHam=null;   // önceki belgenin kenarları kalmasın
     if(sf){
       if(sf.leftMargin!==undefined)doc.page.ml=sf.leftMargin;
       if(sf.rightMargin!==undefined)doc.page.mr=sf.rightMargin;
@@ -1747,12 +1748,18 @@ document.querySelectorAll(".tabs button").forEach(b=>b.onclick=()=>showTab(b.dat
 
 /* ================= EKLE ================= */
 function insertNode(node){
-  const s=getSelection();
-  if(s.rangeCount){const r=s.getRangeAt(0);r.deleteContents();r.insertNode(node);
+  // Düğmeye dokununca (özellikle telefonda) seçim editörden çıkmış olabilir;
+  // o zaman son bilinen seçime, o da yoksa son paragrafın sonuna eklenir.
+  // Kâğıdın dışına (pencere alanına) asla eklenmez.
+  let s=getSelection();
+  const icerde=()=>s.rangeCount&&sheet.contains(s.getRangeAt(0).commonAncestorContainer);
+  if(!icerde()){ restoreSel(); s=getSelection() }
+  if(icerde()){const r=s.getRangeAt(0);r.deleteContents();r.insertNode(node);
     r.setStartAfter(node);r.collapse(true);s.removeAllRanges();s.addRange(r)}
-  else sheet.appendChild(node);
+  else{ const p=[...sheet.querySelectorAll("p,li")].pop(); (p||sheet).appendChild(node) }
   touch();
 }
+["bInsTab","bInsDate","bInsBreak","bInsImage"].forEach(id=>keep($(id)));
 $("bInsTab").onclick=()=>{insertTab();sheet.focus()};
 $("bInsBreak").onclick=()=>{const d=document.createElement("div");
   d.dataset.udf="pagebreak";d.contentEditable="false";d.textContent="— Sayfa sonu —";
@@ -1760,14 +1767,14 @@ $("bInsBreak").onclick=()=>{const d=document.createElement("div");
   const np=document.createElement("p");np.innerHTML="<br>";d.after(np);touch();stats()};
 $("bInsDate").onclick=()=>{insertNode(document.createTextNode(
   new Date().toLocaleDateString("tr-TR",{day:"2-digit",month:"2-digit",year:"numeric"})));sheet.focus()};
-$("bInsImage").onclick=()=>$("fImg").click();
+$("bInsImage").onclick=()=>{saveSel();$("fImg").click()};   // dosya seçici odağı alır; seçim saklanır
 $("fImg").onchange=e=>{const f=e.target.files[0];if(!f)return;
   const r=new FileReader();
   r.onload=()=>{const img=new Image();
     img.onload=()=>{const sc=Math.min(1,400/img.naturalWidth);
       const el=document.createElement("img");el.src=r.result;
       el.dataset.wpt=Math.round(img.naturalWidth*sc);el.dataset.hpt=Math.round(img.naturalHeight*sc);
-      el.width=+el.dataset.wpt;el.height=+el.dataset.hpt;insertNode(el)};
+      el.width=+el.dataset.wpt;el.height=+el.dataset.hpt;restoreSel();insertNode(el)};
     img.src=r.result};
   r.readAsDataURL(f);e.target.value=""};
 
@@ -2490,10 +2497,24 @@ Yazici.prototype.paragraf=function(el,ek){
 };
 
 Yazici.prototype.bloklar=function(kok){
-  let out="";
-  for(const el of kok.children){
+  let out="", serbest=[];
+  // Paragrafa sarılmamış metin ve satır içi ögeler: tarayıcı bazen doğrudan
+  // kâğıda yazar. Birlikte tek paragraf sayılır; eskiden dosyaya girmiyor,
+  // kaydetme "eksik kaydedilecekti" uyarısıyla duruyordu.
+  const bosalt=()=>{
+    if(!serbest.length) return;
+    const p=document.createElement("p");
+    for(const n of serbest) p.appendChild(n.cloneNode(true));
+    serbest=[]; out+=this.paragraf(p);
+  };
+  for(const el of kok.childNodes){
+    if(el.nodeType===3){ if(el.nodeValue.replace(/[\s ​]+/g,"")) serbest.push(el); continue }
+    if(el.nodeType!==1) continue;
     const T=el.tagName;
     if(el.dataset&&el.dataset.udf==="sb") continue;
+    const blok=/^(P|DIV|LI|UL|OL|TABLE|H\d)$/.test(T)||(el.dataset&&el.dataset.udf==="pagebreak");
+    if(!blok){ if(T==="BR") bosalt(); else serbest.push(el); continue }
+    bosalt();
     if(el.dataset&&el.dataset.udf==="pagebreak"){ out+=this.sayfaSonu(el); continue }
     if(T==="UL"||T==="OL"){
       if(!el.dataset.listid) el.dataset.listid=String(++this.listeId);
@@ -2508,11 +2529,9 @@ Yazici.prototype.bloklar=function(kok){
       continue;
     }
     if(T==="TABLE"){ out+=this.tablo(el); continue }
-    if(T==="P"||T==="DIV"||T==="LI"||/^H\d$/.test(T)){ out+=this.paragraf(el); continue }
-    if(T==="BR") continue;
-    // Bloğa sarılmamış satır içi öge: paragraf say
     out+=this.paragraf(el);
   }
+  bosalt();
   return out;
 };
 Yazici.prototype.sayfaSonu=function(el){
@@ -2698,7 +2717,12 @@ async function imzaYukle(ab){
 async function kaydedilecek(){
   if(doc.imza&&!doc.dirty) return {ok:true, blob:new Blob([doc.imza.zip],{type:"application/octet-stream"})};
   if(doc.imza){ doc.imza=null; imzaDurumu() }
-  return udfUret();
+  const r=await udfUret();
+  // Değişmemiş belge imzalanırken kaynakXml aynen imzalanır; o yüzden burada
+  // dosyanın şimdiki hâliyle güncellenmeli. Yoksa "değiştir → Kaydet → İmzala"
+  // sırasında, açılıştaki eski içerik imzalanıyordu.
+  if(r.ok) doc.kaynakXml=new TextEncoder().encode(r.xml);
+  return r;
 }
 window.kaydedilecek=kaydedilecek;
 
@@ -2748,8 +2772,9 @@ async function kopruIstek(yol,yontem,govde){
         headers:Object.assign({"X-Eslesme":a.kod},govde?{"Content-Type":"application/json"}:{}),
         body:govde?JSON.stringify(govde):undefined});
     }catch(e){
-      throw new Error("Bilgisayardaki köprüye ulaşılamadı. Köprü açık mı, telefon aynı Wi-Fi'de mi? "+
-        "iPhone/iPad'de köprünün sertifikası kurulu ve tam güven açık olmalı (köprü penceresindeki kare kod).");
+      throw new Error("Bilgisayardaki köprüye ulaşılamadı. Bilgisayarda Uyap Asistan açık mı? Telefon aynı Wi-Fi'de "+
+        "değilse Tailscale açık ve adres …ts.net olmalı. Yerel adreste iPhone/iPad'e köprünün sertifikası kurulu "+
+        "ve tam güven açık olmalı (Uyap Asistan → Telefondan e-imza'daki kare kod).");
     }
     durum=y.status; metin=await y.text();
   }
@@ -3144,9 +3169,11 @@ $("bGoto").onclick=()=>panel("Sayfaya git",
       const n=Math.max(1,parseInt($("gN").value)||1); closePanel();
       if(document.body.dataset.view!=="page") $("bView").click();
       setTimeout(()=>{
-        const ph=parseFloat(getComputedStyle(sheet).getPropertyValue("--ph"))||sheet.offsetHeight;
+        // --ph punto; kaydırma piksel ister (1 nk = 96/72 px)
+        const ph=(parseFloat(getComputedStyle(sheet).getPropertyValue("--ph"))||841.89)*96/72;
         const z=parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--zoom"))||1;
-        $("main").scrollTop=sheet.offsetTop+(n-1)*ph*z;
+        const m=$("main"), ust=sheet.getBoundingClientRect().top-m.getBoundingClientRect().top+m.scrollTop;
+        m.scrollTop=ust+(n-1)*ph*z;
       },120);
     }});
 const SEMBOLLER="§ ₺ € $ £ ° ± × ÷ ≤ ≥ ≠ ≈ ‰ % « » “ ” ‘ ’ „ • · – — … ← → ↑ ↓ ⇒ ✓ ✗ © ® ™ ½ ¼ ¾ ¹ ² ³ µ Ω α β π Σ √ ∞ ¶ † ‡ Ç ç Ğ ğ İ ı Ö ö Ş ş Ü ü Â â Î î Û û".split(" ");
@@ -3217,7 +3244,8 @@ $("bHelp").onclick=()=>panel("Yardım",
   `<div class="fld" style="line-height:1.6">
    <b>İmzalama</b> — Araçlar → İmzala. <b>APDU Etkin</b> açıkken imza telefona takılı kartla atılır
    (USB-C/OTG adaptörü + kart okuyucu ya da token). Kapalıyken bilgisayardaki e-imza kullanılır:
-   bilgisayarda <b>UDF-Imza-Koprusu</b>'nu açın, penceresindeki adres ve eşleşme kodunu girin.<br>
+   adres ve eşleşme kodu bilgisayarda <b>Uyap Asistan → Ayarlar → Telefondan e-imza</b> bölümünde yazar;
+   ofis dışında Tailscale açıkken <b>…ts.net</b> adresi kullanılır.<br>
    <b>İmzalı belge</b> — Değiştirmeden kaydederseniz imza korunur. Değiştirirseniz imza kalkar;
    yeniden imzalamanız gerekir.<br>
    <b>Toplu İmzala</b> — Dosya → Toplu İmzala: birden çok UDF'yi tek PIN girişiyle imzalar.</div>

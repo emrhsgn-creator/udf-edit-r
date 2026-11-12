@@ -277,6 +277,7 @@ async function openFile(file){
     doc.udfHam=null;                         // açılamayan dosya, açık belgeye dokunmasın
     // Sayfa düzeni codec'in HTML katmanında taşınmıyor; arşivden ayrıca okunuyor.
     const sf=await window.UDF.sayfaOku(ab);
+    doc.page=YENI_SAYFA(); doc.sayfaHam=null;   // önceki belgenin kenarları kalmasın
     if(sf){
       if(sf.leftMargin!==undefined)doc.page.ml=sf.leftMargin;
       if(sf.rightMargin!==undefined)doc.page.mr=sf.rightMargin;
@@ -882,12 +883,18 @@ document.querySelectorAll(".tabs button").forEach(b=>b.onclick=()=>showTab(b.dat
 
 /* ================= EKLE ================= */
 function insertNode(node){
-  const s=getSelection();
-  if(s.rangeCount){const r=s.getRangeAt(0);r.deleteContents();r.insertNode(node);
+  // Düğmeye dokununca (özellikle telefonda) seçim editörden çıkmış olabilir;
+  // o zaman son bilinen seçime, o da yoksa son paragrafın sonuna eklenir.
+  // Kâğıdın dışına (pencere alanına) asla eklenmez.
+  let s=getSelection();
+  const icerde=()=>s.rangeCount&&sheet.contains(s.getRangeAt(0).commonAncestorContainer);
+  if(!icerde()){ restoreSel(); s=getSelection() }
+  if(icerde()){const r=s.getRangeAt(0);r.deleteContents();r.insertNode(node);
     r.setStartAfter(node);r.collapse(true);s.removeAllRanges();s.addRange(r)}
-  else sheet.appendChild(node);
+  else{ const p=[...sheet.querySelectorAll("p,li")].pop(); (p||sheet).appendChild(node) }
   touch();
 }
+["bInsTab","bInsDate","bInsBreak","bInsImage"].forEach(id=>keep($(id)));
 $("bInsTab").onclick=()=>{insertTab();sheet.focus()};
 $("bInsBreak").onclick=()=>{const d=document.createElement("div");
   d.dataset.udf="pagebreak";d.contentEditable="false";d.textContent="— Sayfa sonu —";
@@ -895,14 +902,14 @@ $("bInsBreak").onclick=()=>{const d=document.createElement("div");
   const np=document.createElement("p");np.innerHTML="<br>";d.after(np);touch();stats()};
 $("bInsDate").onclick=()=>{insertNode(document.createTextNode(
   new Date().toLocaleDateString("tr-TR",{day:"2-digit",month:"2-digit",year:"numeric"})));sheet.focus()};
-$("bInsImage").onclick=()=>$("fImg").click();
+$("bInsImage").onclick=()=>{saveSel();$("fImg").click()};   // dosya seçici odağı alır; seçim saklanır
 $("fImg").onchange=e=>{const f=e.target.files[0];if(!f)return;
   const r=new FileReader();
   r.onload=()=>{const img=new Image();
     img.onload=()=>{const sc=Math.min(1,400/img.naturalWidth);
       const el=document.createElement("img");el.src=r.result;
       el.dataset.wpt=Math.round(img.naturalWidth*sc);el.dataset.hpt=Math.round(img.naturalHeight*sc);
-      el.width=+el.dataset.wpt;el.height=+el.dataset.hpt;insertNode(el)};
+      el.width=+el.dataset.wpt;el.height=+el.dataset.hpt;restoreSel();insertNode(el)};
     img.src=r.result};
   r.readAsDataURL(f);e.target.value=""};
 

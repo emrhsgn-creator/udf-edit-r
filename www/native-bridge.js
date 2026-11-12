@@ -53,14 +53,17 @@
   if (Dosya) Dosya.addListener("dosyaGeldi", function (d) { return openUri(d && d.uri); });
 
   if (App) {
+    var sonGeri = 0;
     App.addListener("backButton", function () {
       var dlg = document.getElementById("dlg"), pnl = document.getElementById("panel");
       if (dlg && dlg.classList.contains("on")) { closeDialog(); return; }
       if (pnl && pnl.classList.contains("on")) { closePanel(); return; }
-      if (doc.dirty) {
+      // İlk basışta uyarı, 4 sn içinde ikincide çıkış. "değişti" bayrağına
+      // dokunulmaz: sıfırlanınca Kaydet, imzalı belgenin eski hâlini yazıyordu.
+      if (doc.dirty && Date.now() - sonGeri > 4000) {
+        sonGeri = Date.now();
         bildir('<span class="mk">!</span><span>Kaydedilmemiş değişiklik var. ' +
-          'Çıkmadan önce <b>Kaydet</b>e dokunun.</span>', 4000);
-        doc.dirty = false;                     // ikinci geri tuşu çıkarsın
+          'Çıkmadan önce <b>Kaydet</b>e dokunun; çıkmak için yeniden <b>Geri</b>ye basın.</span>', 4000);
         return;
       }
       App.exitApp();

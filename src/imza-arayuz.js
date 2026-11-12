@@ -84,7 +84,12 @@ async function imzaYukle(ab){
 async function kaydedilecek(){
   if(doc.imza&&!doc.dirty) return {ok:true, blob:new Blob([doc.imza.zip],{type:"application/octet-stream"})};
   if(doc.imza){ doc.imza=null; imzaDurumu() }
-  return udfUret();
+  const r=await udfUret();
+  // Değişmemiş belge imzalanırken kaynakXml aynen imzalanır; o yüzden burada
+  // dosyanın şimdiki hâliyle güncellenmeli. Yoksa "değiştir → Kaydet → İmzala"
+  // sırasında, açılıştaki eski içerik imzalanıyordu.
+  if(r.ok) doc.kaynakXml=new TextEncoder().encode(r.xml);
+  return r;
 }
 window.kaydedilecek=kaydedilecek;
 
@@ -134,8 +139,9 @@ async function kopruIstek(yol,yontem,govde){
         headers:Object.assign({"X-Eslesme":a.kod},govde?{"Content-Type":"application/json"}:{}),
         body:govde?JSON.stringify(govde):undefined});
     }catch(e){
-      throw new Error("Bilgisayardaki köprüye ulaşılamadı. Köprü açık mı, telefon aynı Wi-Fi'de mi? "+
-        "iPhone/iPad'de köprünün sertifikası kurulu ve tam güven açık olmalı (köprü penceresindeki kare kod).");
+      throw new Error("Bilgisayardaki köprüye ulaşılamadı. Bilgisayarda Uyap Asistan açık mı? Telefon aynı Wi-Fi'de "+
+        "değilse Tailscale açık ve adres …ts.net olmalı. Yerel adreste iPhone/iPad'e köprünün sertifikası kurulu "+
+        "ve tam güven açık olmalı (Uyap Asistan → Telefondan e-imza'daki kare kod).");
     }
     durum=y.status; metin=await y.text();
   }

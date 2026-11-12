@@ -417,10 +417,24 @@ Yazici.prototype.paragraf=function(el,ek){
 };
 
 Yazici.prototype.bloklar=function(kok){
-  let out="";
-  for(const el of kok.children){
+  let out="", serbest=[];
+  // Paragrafa sarılmamış metin ve satır içi ögeler: tarayıcı bazen doğrudan
+  // kâğıda yazar. Birlikte tek paragraf sayılır; eskiden dosyaya girmiyor,
+  // kaydetme "eksik kaydedilecekti" uyarısıyla duruyordu.
+  const bosalt=()=>{
+    if(!serbest.length) return;
+    const p=document.createElement("p");
+    for(const n of serbest) p.appendChild(n.cloneNode(true));
+    serbest=[]; out+=this.paragraf(p);
+  };
+  for(const el of kok.childNodes){
+    if(el.nodeType===3){ if(el.nodeValue.replace(/[\s ​]+/g,"")) serbest.push(el); continue }
+    if(el.nodeType!==1) continue;
     const T=el.tagName;
     if(el.dataset&&el.dataset.udf==="sb") continue;
+    const blok=/^(P|DIV|LI|UL|OL|TABLE|H\d)$/.test(T)||(el.dataset&&el.dataset.udf==="pagebreak");
+    if(!blok){ if(T==="BR") bosalt(); else serbest.push(el); continue }
+    bosalt();
     if(el.dataset&&el.dataset.udf==="pagebreak"){ out+=this.sayfaSonu(el); continue }
     if(T==="UL"||T==="OL"){
       if(!el.dataset.listid) el.dataset.listid=String(++this.listeId);
@@ -435,11 +449,9 @@ Yazici.prototype.bloklar=function(kok){
       continue;
     }
     if(T==="TABLE"){ out+=this.tablo(el); continue }
-    if(T==="P"||T==="DIV"||T==="LI"||/^H\d$/.test(T)){ out+=this.paragraf(el); continue }
-    if(T==="BR") continue;
-    // Bloğa sarılmamış satır içi öge: paragraf say
     out+=this.paragraf(el);
   }
+  bosalt();
   return out;
 };
 Yazici.prototype.sayfaSonu=function(el){

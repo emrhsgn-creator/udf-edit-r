@@ -211,7 +211,7 @@ paragrafa ait değildir, görünümü etkilemez.
 
 ## Sınamalar
 
-`npm test` altı takım çalıştırır:
+`npm test` yedi takım çalıştırır:
 
 - `test-codec.mjs` — codec'i tarayıcı ortamını taklit ederek (Buffer global
   değilken) sınar.
@@ -226,6 +226,9 @@ paragrafa ait değildir, görünümü etkilemez.
 - `test-masaustu.mjs` — masaüstünde oluşturulan belgelerle birebirliği sınar.
 - `test-gelen-dosya.mjs` — Birlikte aç / Paylaş ile gelen dosyanın açılmasını ve
   Kaydet'in yanlış dosyanın üzerine yazmamasını sınar.
+- `test-duzeltmeler.mjs` — gerçek kullanımda çıkan hatalar: değiştir → Kaydet → İmzala
+  son hâli imzalar; paragrafa sarılmamış metin dosyaya girer; Android Geri tuşu
+  değişiklik bayrağını bozmaz.
 
 Geçmişteki hataların çoğu tam olarak bu noktalardaydı.
 
